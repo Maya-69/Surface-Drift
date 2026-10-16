@@ -22,6 +22,10 @@ from .eol_analyzer import audit_eol_technologies
 from .blh_detector import detect_broken_link_hijacking
 from .waf_origin import audit_waf_historical_origin_bypasses
 from .config_prober import probe_exposed_configurations
+from .tls_auditor import audit_cryptographic_posture
+from .breach_intel import audit_leaked_credentials
+from .typosquat_monitor import audit_typosquatting_threats
+from .remediation_playbooks import generate_automated_playbooks
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ async def run_advanced_assessment(
     output_dir: Path,
     artifacts_dir: Path,
     on_log: Optional[Callable[[str], Any]] = None,
+    emails: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Execute selected SurfaceDrift advanced CTEM and threat assessment engines
@@ -62,11 +67,27 @@ async def run_advanced_assessment(
 
     enabled_cats = set(categories) if categories else {
         "http_probe", "takeover", "cloud_audit", "waf_bypass", "epss_kev", "email_sec",
-        "js_secrets", "shadow_api", "eol_audit", "blh_audit", "waf_history", "config_probe"
+        "js_secrets", "shadow_api", "eol_audit", "blh_audit", "waf_history", "config_probe",
+        "tls_posture", "breach_intel", "typosquatting", "remediation"
     }
 
+    # Combined WAF Mapping selection triggers both edge CDN bypass and historical WAF audits
+    if "waf_mapping" in enabled_cats:
+        enabled_cats.add("waf_bypass")
+        enabled_cats.add("waf_history")
+
+    # Load scraped emails if provided or from reconnaissance output
+    scraped_emails = list(emails or [])
+    if not scraped_emails:
+        emails_file = output_dir / "emails.txt"
+        if emails_file.exists():
+            try:
+                scraped_emails = [line.strip() for line in emails_file.read_text(encoding="utf-8").splitlines() if "@" in line]
+            except Exception:
+                pass
+
     emit(f"[-] SurfaceDrift CTEM Pipeline initialized for: {target}")
-    emit(f"[i] Input reconnaissance scope: {len(subdomains)} subdomains, {len(ip_records)} IP records")
+    emit(f"[i] Input reconnaissance scope: {len(subdomains)} subdomains, {len(ip_records)} IP records, {len(scraped_emails)} emails")
     emit(f"[i] Assessment categories enabled: {', '.join(sorted(enabled_cats))}")
 
     # Clean subdomains list: guarantee root domain is included
@@ -334,7 +355,72 @@ async def run_advanced_assessment(
         else:
             emit("[+] Configuration Probing complete: No sensitive configuration or backup files exposed")
 
-    # 13. Compute Composite Risk Score & Grade
+    # 13. SSL/TLS Cryptographic Posture (Compliance)
+    tls_posture_data = {"endpoints_audited": 0, "expiring_soon_count": 0, "missing_hsts_count": 0, "weak_protocol_count": 0, "certificates": []}
+    if "tls_posture" in enabled_cats:
+        emit("[-] Initiating asynchronous TLS handshakes to audit certificates, ciphers, and HSTS enforcement...")
+        tls_posture_data = await audit_cryptographic_posture(live_subdomain_names[:15])
+        exp_count = tls_posture_data.get("expiring_soon_count", 0)
+        hsts_count = tls_posture_data.get("missing_hsts_count", 0)
+        weak_count = tls_posture_data.get("weak_protocol_count", 0)
+        if exp_count > 0 or weak_count > 0:
+            emit(f"[!] TLS Alert: {exp_count} cert(s) expiring soon, {weak_count} weak/deprecated protocol(s) detected!")
+        else:
+            emit(f"[+] Cryptographic Posture audit complete: {tls_posture_data.get('endpoints_audited', 0)} HTTPS endpoint(s) verified")
+        if hsts_count > 0:
+            emit(f"[*] HSTS Notice: {hsts_count} endpoint(s) lack Strict-Transport-Security header")
+
+    # 14. Leaked Credential & Breach Intelligence (Identity Risk)
+    breach_intel_data = {"total_emails_audited": 0, "compromised_identities_count": 0, "critical_credential_leaks_count": 0, "breached_identities": []}
+    if "breach_intel" in enabled_cats:
+        emit(f"[-] Querying breach intelligence & credential exposure databases for target identities...")
+        breach_intel_data = await audit_leaked_credentials(scraped_emails, target)
+        comp_count = breach_intel_data.get("compromised_identities_count", 0)
+        crit_count = breach_intel_data.get("critical_credential_leaks_count", 0)
+        if comp_count > 0:
+            emit(f"[!] Identity Risk: {comp_count} employee email(s) found in known credential leaks ({crit_count} with passwords)!")
+            for bi in breach_intel_data.get("breached_identities", [])[:4]:
+                emit(f"[*] Breached Identity: {bi['email']} exposed in {len(bi['breaches'])} leak(s): {', '.join(bi['breaches'][:2])}")
+        else:
+            emit(f"[+] Breach Intelligence check complete: {breach_intel_data.get('total_emails_audited', 0)} email(s) analyzed, zero critical breaches found")
+
+    # 15. Typosquatting & Brand Phishing Monitor (Threat Intel)
+    typosquatting_data = {"root_domain": target, "permutations_tested_count": 0, "active_squats_count": 0, "weaponized_phishing_count": 0, "active_squats": []}
+    if "typosquatting" in enabled_cats:
+        emit("[-] Generating brand permutation lookalikes & querying DNS/MX for active typosquatting / phishing threats...")
+        typosquatting_data = await audit_typosquatting_threats(target)
+        sq_count = typosquatting_data.get("active_squats_count", 0)
+        phish_count = typosquatting_data.get("weaponized_phishing_count", 0)
+        if phish_count > 0:
+            emit(f"[!] PHISHING THREAT: {phish_count} active typosquatted domain(s) have live MX mailservers configured!")
+            for sq in typosquatting_data.get("active_squats", [])[:4]:
+                if sq.get("has_mx"):
+                    emit(f"[!] Active Phishing Vector: '{sq['domain']}' ({sq['variation_type']}) -> IP: {sq['primary_ip']}, MX: {', '.join(sq['mx_hosts'][:2])}")
+        elif sq_count > 0:
+            emit(f"[*] Brand Alert: {sq_count} lookalike domain(s) are registered and resolving to IP addresses")
+        else:
+            emit(f"[+] Typosquatting check complete: {typosquatting_data.get('permutations_tested_count', 0)} variations tested, zero active lookalikes")
+
+    # Intermediate findings dict for automated playbooks & scoring
+    current_findings = {
+        "email_security": email_sec_data,
+        "cloud_storage": {"buckets": cloud_buckets_found},
+        "subdomain_takeovers": {"items": takeovers_found},
+        "tls_posture": tls_posture_data,
+        "exposed_configs": config_probe_data,
+        "js_secrets": js_secrets_data,
+        "typosquatting": typosquatting_data,
+        "broken_links": blh_data,
+    }
+
+    # 16. Automated Remediation Playbooks (SecOps Integration)
+    remediation_playbooks = []
+    if "remediation" in enabled_cats:
+        emit("[-] Synthesizing automated remediation playbooks and actionable fix commands...")
+        remediation_playbooks = generate_automated_playbooks(target, current_findings)
+        emit(f"[+] Remediation engine generated {len(remediation_playbooks)} actionable SecOps playbook(s)")
+
+    # 17. Compute Composite Risk Score & Grade
     emit("[-] Computing composite SurfaceDrift posture score and letter grade...")
     risk_eval = calculate_risk_score(
         critical_vulns_count=critical_vulns_count,
@@ -349,6 +435,9 @@ async def run_advanced_assessment(
         shadow_apis_count=shadow_api_data.get("exposed_endpoints_count", 0),
         eol_findings_count=eol_data.get("eol_findings_count", 0),
         broken_links_count=blh_data.get("broken_links_found", 0),
+        tls_issues_count=tls_posture_data.get("expiring_soon_count", 0) + tls_posture_data.get("weak_protocol_count", 0),
+        breached_creds_count=breach_intel_data.get("critical_credential_leaks_count", 0),
+        active_phishing_squats_count=typosquatting_data.get("weaponized_phishing_count", 0),
     )
 
     breakdown_dicts = [
@@ -359,7 +448,7 @@ async def run_advanced_assessment(
     for b in breakdown_dicts:
         emit(f"[*] Deduction [-{b['deduction']} pts] {b['category']}: {b['description']}")
 
-    # 14. Generate Threat Summary
+    # 18. Generate Threat Summary
     emit("[-] Generating executive threat exposure summary...")
     ai_summary = generate_executive_summary(
         target=target,
@@ -377,7 +466,7 @@ async def run_advanced_assessment(
     )
     emit(f"[+] Executive threat summary generated successfully")
 
-    # 15. Structure Final Advanced Assessment Report
+    # 19. Structure Final Advanced Assessment Report
     advanced_report = {
         "scan_id": scan_id,
         "target": target,
@@ -419,6 +508,10 @@ async def run_advanced_assessment(
             "broken_links": blh_data,
             "waf_history": waf_history_data,
             "exposed_configs": config_probe_data,
+            "tls_posture": tls_posture_data,
+            "breach_intel": breach_intel_data,
+            "typosquatting": typosquatting_data,
+            "remediation_playbooks": remediation_playbooks,
         },
         "logs": logs_collected,
     }

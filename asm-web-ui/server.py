@@ -77,7 +77,12 @@ class ContinueSurfaceDriftRequest(BaseModel):
             "eol_audit",
             "blh_audit",
             "waf_history",
+            "waf_mapping",
             "config_probe",
+            "tls_posture",
+            "breach_intel",
+            "typosquatting",
+            "remediation",
         ]
     )
 

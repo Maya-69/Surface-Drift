@@ -1320,4 +1320,158 @@ body.scan-mode .header-nav{display:none}body.scan-mode .mobile-menu{display:none
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ==========================================================================
+   SurfaceDrift CTEM Addons (TLS, Breach, Typosquat, Remediation)
+   ========================================================================== */
+.deep-findings-grid .panel-full-width {
+  grid-column: 1 / -1;
+}
+
+.tls-posture-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.tls-posture-table th {
+  text-align: left;
+  padding: 6px 10px;
+  color: #8ea39b;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.tls-posture-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: middle;
+}
+.tls-posture-table tr:last-child td {
+  border-bottom: none;
+}
+
+.radar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.radar-dot-orange {
+  background: #fb923c;
+  box-shadow: 0 0 6px rgba(251, 146, 60, 0.6);
+}
+.radar-pulse-red {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+  animation: radarPulse 1.4s infinite ease-in-out;
+}
+@keyframes radarPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.6; }
+}
+
+.remediation-card {
+  background: rgba(10, 24, 30, 0.65);
+  border: 1px solid rgba(67, 226, 210, 0.18);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  transition: border-color 0.18s ease;
+}
+.remediation-card:hover {
+  border-color: rgba(67, 226, 210, 0.4);
+}
+.remediation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.remediation-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.remediation-desc {
+  font-size: 11.5px;
+  color: #b7cbbf;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.remediation-snippet-box {
+  background: #040d11;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+}
+.remediation-snippet-box pre {
+  margin: 0;
+  font-size: 11px;
+  color: #43e2d2;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.btn-copy-snippet {
+  background: rgba(67, 226, 210, 0.1);
+  border: 1px solid rgba(67, 226, 210, 0.3);
+  color: #43e2d2;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-copy-snippet:hover {
+  background: rgba(67, 226, 210, 0.22);
+  border-color: #43e2d2;
+  box-shadow: 0 0 10px rgba(67, 226, 210, 0.3);
+}
+.btn-copy-snippet.copied {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: #22c55e;
+  color: #4ade80;
+}
+
+.sd-badge-ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.sd-badge-medium {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.sd-badge-critical {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+
 

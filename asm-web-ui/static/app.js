@@ -1130,6 +1130,11 @@
         if ($('#cat-http-probe')?.checked) categories.push('http_probe');
         if ($('#cat-takeover')?.checked) categories.push('takeover');
         if ($('#cat-cloud-audit')?.checked) categories.push('cloud_audit');
+        if ($('#cat-waf-mapping')?.checked) {
+          categories.push('waf_mapping');
+          categories.push('waf_bypass');
+          categories.push('waf_history');
+        }
         if ($('#cat-waf-bypass')?.checked) categories.push('waf_bypass');
         if ($('#cat-epss-kev')?.checked) categories.push('epss_kev');
         if ($('#cat-email-sec')?.checked) categories.push('email_sec');
@@ -1139,6 +1144,10 @@
         if ($('#cat-blh-audit')?.checked) categories.push('blh_audit');
         if ($('#cat-waf-history')?.checked) categories.push('waf_history');
         if ($('#cat-config-probe')?.checked) categories.push('config_probe');
+        if ($('#cat-tls-posture')?.checked) categories.push('tls_posture');
+        if ($('#cat-breach-intel')?.checked) categories.push('breach_intel');
+        if ($('#cat-typosquatting')?.checked) categories.push('typosquatting');
+        if ($('#cat-remediation')?.checked) categories.push('remediation');
 
         if (!categories.length) {
           alert('Please select at least one assessment category to run.');
@@ -1599,6 +1608,185 @@
             <span class="finding-tag" style="background:rgba(239,68,68,0.22);color:#f87171;font-weight:600;">${escapeHtml(cf.severity)}</span>
           `;
           cfgBox.appendChild(row);
+        });
+      }
+    }
+
+    // 10. SSL/TLS Cryptographic Health (Compliance)
+    const tlsData = findings.tls_posture || { endpoints_audited: 0, expiring_soon_count: 0, missing_hsts_count: 0, weak_protocol_count: 0, certificates: [] };
+    const tlsBadge = $('#adv-badge-tls');
+    if (tlsBadge) {
+      const issueTotal = (tlsData.expiring_soon_count || 0) + (tlsData.weak_protocol_count || 0);
+      tlsBadge.textContent = `${tlsData.endpoints_audited || 0} evaluated (${issueTotal} issues)`;
+      tlsBadge.classList.toggle('critical', issueTotal > 0);
+    }
+    const tlsBox = $('#adv-container-tls');
+    if (tlsBox) {
+      tlsBox.replaceChildren();
+      if (!tlsData.certificates || !tlsData.certificates.length) {
+        tlsBox.innerHTML = '<p class="empty-state">✓ All scanned endpoints maintain valid certificates &amp; modern TLS.</p>';
+      } else {
+        const table = document.createElement('table');
+        table.className = 'tls-posture-table';
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th>Issuer</th>
+              <th>Expiry / Days</th>
+              <th>Protocol / Cipher</th>
+              <th>HSTS</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        `;
+        const tbody = table.querySelector('tbody');
+        tlsData.certificates.forEach((c) => {
+          const tr = document.createElement('tr');
+          const isExpiring = c.status === 'EXPIRING_SOON' || c.status === 'EXPIRED';
+          const isError = c.status === 'HANDSHAKE_FAILED' || c.status === 'ERROR';
+          let statusBadgeClass = 'sd-badge-ok';
+          let statusText = 'VALID';
+          if (c.status === 'EXPIRING_SOON') {
+            statusBadgeClass = 'sd-badge-medium';
+            statusText = `EXPIRING (${c.days_remaining}d)`;
+          } else if (c.status === 'EXPIRED') {
+            statusBadgeClass = 'sd-badge-critical';
+            statusText = 'EXPIRED';
+          } else if (isError) {
+            statusBadgeClass = 'sd-badge-critical';
+            statusText = 'FAILED';
+          }
+
+          const hstsBadge = c.missing_hsts
+            ? '<span class="status-pill warn" style="font-size:9px;">MISSING</span>'
+            : '<span class="status-pill ok" style="font-size:9px;">ENFORCED</span>';
+
+          const protoDisplay = c.tls_version ? `${escapeHtml(c.tls_version)} (${c.cipher_bits || 128}b)` : 'N/A';
+          const protoStyle = c.weak_cipher ? 'color:#f87171;font-weight:600;' : '';
+
+          tr.innerHTML = `
+            <td><strong class="mono-val" style="color:#e4f2ee;">${escapeHtml(c.hostname)}</strong></td>
+            <td><small style="color:#8ea39b;">${escapeHtml(c.issuer || 'Unknown')}</small></td>
+            <td><span class="mono-val" style="${isExpiring ? 'color:#f87171;font-weight:600;' : 'color:#c4d6cf;'}">${c.days_remaining !== null && c.days_remaining !== undefined ? `${c.days_remaining}d left` : 'Unknown'}</span></td>
+            <td><span class="mono-val" style="${protoStyle}">${protoDisplay}</span></td>
+            <td>${hstsBadge}</td>
+            <td><span class="${statusBadgeClass}">${statusText}</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+        tlsBox.appendChild(table);
+      }
+    }
+
+    // 11. Leaked Credential & Breach Intelligence (Identity Risk)
+    const breachData = findings.breach_intel || { total_emails_audited: 0, compromised_identities_count: 0, critical_credential_leaks_count: 0, breached_identities: [] };
+    const breachBadge = $('#adv-badge-breach');
+    if (breachBadge) {
+      breachBadge.textContent = `${breachData.compromised_identities_count || 0} compromised`;
+      breachBadge.classList.toggle('critical', (breachData.compromised_identities_count || 0) > 0);
+    }
+    const breachBox = $('#adv-container-breach');
+    if (breachBox) {
+      breachBox.replaceChildren();
+      if (!breachData.breached_identities || !breachData.breached_identities.length) {
+        breachBox.innerHTML = '<p class="empty-state">✓ Zero employee email addresses found in known credential leaks.</p>';
+      } else {
+        breachData.breached_identities.forEach((b) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          const isCrit = b.severity === 'CRITICAL' || b.has_passwords;
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="${isCrit ? 'color:#f87171;' : 'color:#fb923c;'}">${escapeHtml(b.email)}</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">Breaches (${b.breaches.length}): ${escapeHtml(b.breaches.join(', '))} · Last seen: ${escapeHtml(b.last_breach_date || 'N/A')}</small>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              ${b.has_passwords ? '<span class="finding-tag" style="background:rgba(239,68,68,0.22);color:#f87171;font-weight:700;">PASSWORDS LEAKED</span>' : ''}
+              <span class="finding-tag" style="background:rgba(249,115,22,0.2);color:#fb923c;font-weight:600;">${escapeHtml(b.severity)}</span>
+            </div>
+          `;
+          breachBox.appendChild(row);
+        });
+      }
+    }
+
+    // 12. Typosquatting & Phishing Threat Radar (Threat Intel)
+    const typoData = findings.typosquatting || { root_domain: '', permutations_tested_count: 0, active_squats_count: 0, weaponized_phishing_count: 0, active_squats: [] };
+    const typoBadge = $('#adv-badge-typosquat');
+    if (typoBadge) {
+      typoBadge.textContent = `${typoData.active_squats_count || 0} active (${typoData.weaponized_phishing_count || 0} phishing)`;
+      typoBadge.classList.toggle('critical', (typoData.weaponized_phishing_count || 0) > 0);
+    }
+    const typoBox = $('#adv-container-typosquat');
+    if (typoBox) {
+      typoBox.replaceChildren();
+      if (!typoData.active_squats || !typoData.active_squats.length) {
+        typoBox.innerHTML = '<p class="empty-state">✓ Zero active typosquatted or brand impersonation domains detected.</p>';
+      } else {
+        typoData.active_squats.forEach((sq) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          const isPhish = sq.threat_level === 'WEAPONIZED_PHISHING' || sq.has_mx;
+          row.innerHTML = `
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="radar-dot ${isPhish ? 'radar-pulse-red' : 'radar-dot-orange'}"></span>
+                <strong class="finding-name" style="${isPhish ? 'color:#f87171;' : 'color:#fb923c;'}">${escapeHtml(sq.domain)}</strong>
+                <span class="cat-chip" style="font-size:9px;padding:1px 5px;">${escapeHtml(sq.variation_type)}</span>
+              </div>
+              <small style="display:block;color:#8ea39b;font-size:10px;margin-top:2px;">
+                Resolves to: <code style="color:#43e2d2;">${escapeHtml(sq.primary_ip || 'None')}</code> ${sq.has_mx ? `· Active MX: <code>${escapeHtml((sq.mx_hosts || []).slice(0, 2).join(', '))}</code>` : ''}
+              </small>
+            </div>
+            <span class="finding-tag" style="${isPhish ? 'background:rgba(239,68,68,0.22);color:#f87171;font-weight:700;' : 'background:rgba(234,179,8,0.2);color:#facc15;font-weight:600;'}">
+              ${escapeHtml(sq.threat_level.replace(/_/g, ' '))}
+            </span>
+          `;
+          typoBox.appendChild(row);
+        });
+      }
+    }
+
+    // 13. Automated Remediation Playbooks (SecOps Integration)
+    const playbooks = findings.remediation_playbooks || [];
+    const remBadge = $('#adv-badge-remediation');
+    if (remBadge) {
+      remBadge.textContent = `${playbooks.length} playbook${playbooks.length === 1 ? '' : 's'}`;
+    }
+    const remBox = $('#adv-container-remediation');
+    if (remBox) {
+      remBox.replaceChildren();
+      if (!playbooks.length) {
+        remBox.innerHTML = '<p class="empty-state">✓ Zero remediation actions required — perimeter posture is solid.</p>';
+      } else {
+        playbooks.forEach((p) => {
+          const card = document.createElement('div');
+          card.className = 'remediation-card';
+          const isCrit = p.severity === 'CRITICAL';
+          card.innerHTML = `
+            <div class="remediation-head">
+              <div class="remediation-title-wrap">
+                <span class="finding-tag" style="${isCrit ? 'background:rgba(239,68,68,0.25);color:#f87171;font-weight:700;' : 'background:rgba(249,115,22,0.22);color:#fb923c;font-weight:600;'}">${escapeHtml(p.severity)}</span>
+                <span class="cat-chip" style="font-size:10px;">${escapeHtml(p.action_type)}</span>
+                <strong style="color:#e4f2ee;font-size:13px;">${escapeHtml(p.title)}</strong>
+              </div>
+              <button class="btn-copy-snippet" type="button" title="Copy code snippet to clipboard">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Copy Snippet</span>
+              </button>
+            </div>
+            <p class="remediation-desc">${escapeHtml(p.description)} <small style="color:#8ea39b;">(Target: <code>${escapeHtml(p.affected_asset)}</code>)</small></p>
+            <div class="remediation-snippet-box">
+              <pre class="mono-val"><code>${escapeHtml(p.code_snippet)}</code></pre>
+            </div>
+          `;
+          const copyBtn = card.querySelector('.btn-copy-snippet');
+          if (copyBtn) {
+            copyBtn.onclick = () => copyToClipboard(p.code_snippet, copyBtn);
+          }
+          remBox.appendChild(card);
         });
       }
     }

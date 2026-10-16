@@ -47,6 +47,9 @@ def calculate_risk_score(
     shadow_apis_count: int = 0,
     eol_findings_count: int = 0,
     broken_links_count: int = 0,
+    tls_issues_count: int = 0,
+    breached_creds_count: int = 0,
+    active_phishing_squats_count: int = 0,
 ) -> RiskEvaluation:
     """
     Compute enterprise attack surface composite score (0-100) and letter grade (A-F).
@@ -202,6 +205,42 @@ def calculate_risk_score(
             ScoreBreakdownItem(
                 category="LINK_HIJACKING",
                 description=f"{broken_links_count} expired external domain in outbound links (BLH risk)",
+                deduction=deduction,
+            )
+        )
+
+    # 13. SSL/TLS Cryptographic Posture: -15
+    if tls_issues_count > 0:
+        deduction = min(tls_issues_count * 15, 25)
+        score -= deduction
+        breakdown.append(
+            ScoreBreakdownItem(
+                category="TLS_POSTURE",
+                description=f"{tls_issues_count} SSL/TLS certificate or cryptographic security issue",
+                deduction=deduction,
+            )
+        )
+
+    # 14. Breached Organizational Identities: -15
+    if breached_creds_count > 0:
+        deduction = min(breached_creds_count * 15, 30)
+        score -= deduction
+        breakdown.append(
+            ScoreBreakdownItem(
+                category="IDENTITY_BREACH",
+                description=f"{breached_creds_count} employee account(s) exposed in third-party credential breaches",
+                deduction=deduction,
+            )
+        )
+
+    # 15. Active Phishing Typosquats (with MX mailservers): -20
+    if active_phishing_squats_count > 0:
+        deduction = min(active_phishing_squats_count * 20, 30)
+        score -= deduction
+        breakdown.append(
+            ScoreBreakdownItem(
+                category="BRAND_PHISHING",
+                description=f"{active_phishing_squats_count} active typosquatted domain(s) configured with live mailservers (phishing vector)",
                 deduction=deduction,
             )
         )

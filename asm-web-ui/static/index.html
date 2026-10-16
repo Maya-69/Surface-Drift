@@ -358,13 +358,13 @@
               </label>
 
               <label class="category-checkbox-card">
-                <input type="checkbox" id="cat-waf-bypass" checked />
+                <input type="checkbox" id="cat-waf-mapping" checked />
                 <div class="cat-body">
                   <div class="cat-title-row">
-                    <span class="cat-title">Infrastructure &amp; WAF Origin Bypass</span>
-                    <span class="cat-chip">CDN</span>
+                    <span class="cat-title">WAF &amp; Origin Bypass Mapping</span>
+                    <span class="cat-chip">Origin IP</span>
                   </div>
-                  <span class="cat-desc">CDN edge detection (Cloudflare, Akamai, Fastly) &amp; direct origin bypass hunt</span>
+                  <span class="cat-desc">CDN edge detection (Cloudflare, Akamai) &amp; historical cert/DNS bypass hunting</span>
                 </div>
               </label>
 
@@ -435,17 +435,6 @@
               </label>
 
               <label class="category-checkbox-card">
-                <input type="checkbox" id="cat-waf-history" checked />
-                <div class="cat-body">
-                  <div class="cat-title-row">
-                    <span class="cat-title">WAF Origin Bypass (Historical)</span>
-                    <span class="cat-chip">Origin IP</span>
-                  </div>
-                  <span class="cat-desc">Cross-reference historical certificates &amp; DNS to discover direct backend origin IPs</span>
-                </div>
-              </label>
-
-              <label class="category-checkbox-card">
                 <input type="checkbox" id="cat-config-probe" checked />
                 <div class="cat-body">
                   <div class="cat-title-row">
@@ -453,6 +442,50 @@
                     <span class="cat-chip chip-critical">Misconfig</span>
                   </div>
                   <span class="cat-desc">Asynchronously probe for /.git/config, /.env, /backup.zip, and /server-status</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-tls-posture" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">SSL/TLS Cryptographic Posture</span>
+                    <span class="cat-chip">Compliance</span>
+                  </div>
+                  <span class="cat-desc">Async TLS handshakes, certificate expiration, HSTS checks, and weak cipher suites</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-breach-intel" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Leaked Credential &amp; Breach Intel</span>
+                    <span class="cat-chip chip-critical">Identity Risk</span>
+                  </div>
+                  <span class="cat-desc">Correlate discovered employee emails against known breach archives and credential dumps</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-typosquatting" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Typosquatting &amp; Phishing Monitor</span>
+                    <span class="cat-chip chip-warning">Threat Intel</span>
+                  </div>
+                  <span class="cat-desc">Permutations, homoglyphs, and DNS/MX probing to flag live impersonation infrastructure</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-remediation" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Automated Remediation Playbooks</span>
+                    <span class="cat-chip">SecOps</span>
+                  </div>
+                  <span class="cat-desc">Synthesizes copyable DNS records, AWS CLI commands, and webserver hardening snippets</span>
                 </div>
               </label>
             </div>
@@ -660,6 +693,50 @@
                   </div>
                   <div class="finding-scroll-box" id="adv-container-config">
                     <p class="empty-state">No sensitive configuration or backup files exposed.</p>
+                  </div>
+                </div>
+
+                <!-- SSL/TLS Cryptographic Posture -->
+                <div class="finding-panel" id="panel-tls-health">
+                  <div class="finding-panel-head">
+                    <h5>SSL/TLS Cryptographic Health</h5>
+                    <span class="finding-badge" id="adv-badge-tls">0 analyzed</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-tls">
+                    <p class="empty-state">No TLS endpoints evaluated.</p>
+                  </div>
+                </div>
+
+                <!-- Leaked Credential & Breach Intelligence -->
+                <div class="finding-panel" id="panel-breach-intel">
+                  <div class="finding-panel-head">
+                    <h5>Breached Identities &amp; Leaked Creds</h5>
+                    <span class="finding-badge" id="adv-badge-breach">0 breached</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-breach">
+                    <p class="empty-state">No employee breach exposures identified.</p>
+                  </div>
+                </div>
+
+                <!-- Typosquatting & Phishing Threat Radar -->
+                <div class="finding-panel" id="panel-typosquatting">
+                  <div class="finding-panel-head">
+                    <h5>Typosquatting &amp; Phishing Radar</h5>
+                    <span class="finding-badge" id="adv-badge-typosquat">0 active squats</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-typosquat">
+                    <p class="empty-state">No active typosquatting or phishing domains detected.</p>
+                  </div>
+                </div>
+
+                <!-- Automated Remediation Playbooks -->
+                <div class="finding-panel panel-full-width" id="panel-remediation-playbooks">
+                  <div class="finding-panel-head">
+                    <h5>Automated Remediation Playbooks (SecOps)</h5>
+                    <span class="finding-badge" id="adv-badge-remediation">0 playbooks</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-remediation">
+                    <p class="empty-state">No remediation actions generated.</p>
                   </div>
                 </div>
               </div>
