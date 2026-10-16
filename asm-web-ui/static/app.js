@@ -1133,6 +1133,12 @@
         if ($('#cat-waf-bypass')?.checked) categories.push('waf_bypass');
         if ($('#cat-epss-kev')?.checked) categories.push('epss_kev');
         if ($('#cat-email-sec')?.checked) categories.push('email_sec');
+        if ($('#cat-js-secrets')?.checked) categories.push('js_secrets');
+        if ($('#cat-shadow-api')?.checked) categories.push('shadow_api');
+        if ($('#cat-eol-audit')?.checked) categories.push('eol_audit');
+        if ($('#cat-blh-audit')?.checked) categories.push('blh_audit');
+        if ($('#cat-waf-history')?.checked) categories.push('waf_history');
+        if ($('#cat-config-probe')?.checked) categories.push('config_probe');
 
         if (!categories.length) {
           alert('Please select at least one assessment category to run.');
@@ -1427,6 +1433,175 @@
       </div>
     `;
     emailBox.appendChild(emailRow);
+
+    // 4. JavaScript Secrets
+    const secData = findings.js_secrets || { secrets_found_count: 0, findings: [] };
+    const secBadge = $('#adv-badge-secrets');
+    if (secBadge) {
+      secBadge.textContent = `${secData.secrets_found_count} secrets`;
+      secBadge.classList.toggle('critical', secData.secrets_found_count > 0);
+    }
+    const secBox = $('#adv-container-secrets');
+    if (secBox) {
+      secBox.replaceChildren();
+      if (!secData.findings || !secData.findings.length) {
+        secBox.innerHTML = '<p class="empty-state">✓ No leaked credentials found in loaded JavaScript files.</p>';
+      } else {
+        secData.findings.forEach((s) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          const isHigh = s.severity === 'HIGH';
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="${isHigh ? 'color:#f87171;' : ''}">${escapeHtml(s.secret_type)}</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">Token: <code>${escapeHtml(s.redacted_value)}</code> in ${escapeHtml(s.script_url)}</small>
+            </div>
+            <span class="finding-tag" style="${isHigh ? 'background:rgba(239,68,68,0.22);color:#f87171;font-weight:600;' : ''}">${escapeHtml(s.severity)}</span>
+          `;
+          secBox.appendChild(row);
+        });
+      }
+    }
+
+    // 5. Shadow APIs & Swagger Docs
+    const apiData = findings.shadow_apis || { exposed_endpoints_count: 0, endpoints: [] };
+    const apiBadge = $('#adv-badge-shadow-api');
+    if (apiBadge) {
+      apiBadge.textContent = `${apiData.exposed_endpoints_count} endpoints`;
+      apiBadge.classList.toggle('critical', apiData.exposed_endpoints_count > 0);
+    }
+    const apiBox = $('#adv-container-shadow-api');
+    if (apiBox) {
+      apiBox.replaceChildren();
+      if (!apiData.endpoints || !apiData.endpoints.length) {
+        apiBox.innerHTML = '<p class="empty-state">✓ No unauthenticated API specifications or GraphQL endpoints exposed.</p>';
+      } else {
+        apiData.endpoints.forEach((ep) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="color:#fb923c;">${escapeHtml(ep.type)}</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">${escapeHtml(ep.url)}</small>
+            </div>
+            <span class="finding-tag" style="background:rgba(249,115,22,0.22);color:#fb923c;font-weight:600;">HTTP ${ep.status_code}</span>
+          `;
+          apiBox.appendChild(row);
+        });
+      }
+    }
+
+    // 6. EOL & Legacy Stack
+    const eolData = findings.eol_software || { eol_findings_count: 0, findings: [] };
+    const eolBadge = $('#adv-badge-eol');
+    if (eolBadge) {
+      eolBadge.textContent = `${eolData.eol_findings_count} EOL`;
+      eolBadge.classList.toggle('critical', eolData.eol_findings_count > 0);
+    }
+    const eolBox = $('#adv-container-eol');
+    if (eolBox) {
+      eolBox.replaceChildren();
+      if (!eolData.findings || !eolData.findings.length) {
+        eolBox.innerHTML = '<p class="empty-state">✓ No deprecated or EOL runtimes detected in perimeter.</p>';
+      } else {
+        eolData.findings.forEach((e) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="color:#facc15;">${escapeHtml(e.product)} ${escapeHtml(e.detected_version)}</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">${escapeHtml(e.hostname)} · Recommend: ${escapeHtml(e.recommended_version)}</small>
+            </div>
+            <span class="finding-tag" style="background:rgba(234,179,8,0.2);color:#facc15;font-weight:600;">EOL &lt; ${escapeHtml(e.eol_threshold)}</span>
+          `;
+          eolBox.appendChild(row);
+        });
+      }
+    }
+
+    // 7. Broken Link Hijacking (BLH)
+    const blhData = findings.broken_links || { broken_links_found: 0, vulnerable_links: [] };
+    const blhBadge = $('#adv-badge-blh');
+    if (blhBadge) {
+      blhBadge.textContent = `${blhData.broken_links_found} broken`;
+      blhBadge.classList.toggle('critical', blhData.broken_links_found > 0);
+    }
+    const blhBox = $('#adv-container-blh');
+    if (blhBox) {
+      blhBox.replaceChildren();
+      if (!blhData.vulnerable_links || !blhData.vulnerable_links.length) {
+        blhBox.innerHTML = '<p class="empty-state">✓ Zero expired external domains detected in outbound links.</p>';
+      } else {
+        blhData.vulnerable_links.forEach((b) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="color:#f87171;">${escapeHtml(b.expired_domain)}</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">Linked at: ${escapeHtml(b.original_link)}</small>
+            </div>
+            <span class="finding-tag" style="background:rgba(239,68,68,0.22);color:#f87171;font-weight:600;">NXDOMAIN (HIJACKABLE)</span>
+          `;
+          blhBox.appendChild(row);
+        });
+      }
+    }
+
+    // 8. Historical WAF Origin Bypasses
+    const wafHistData = findings.waf_history || { origin_bypasses_found: 0, bypasses: [] };
+    const wafHistBadge = $('#adv-badge-waf-history');
+    if (wafHistBadge) {
+      wafHistBadge.textContent = `${wafHistData.origin_bypasses_found} origins`;
+      wafHistBadge.classList.toggle('critical', wafHistData.origin_bypasses_found > 0);
+    }
+    const wafHistBox = $('#adv-container-waf-history');
+    if (wafHistBox) {
+      wafHistBox.replaceChildren();
+      if (!wafHistData.bypasses || !wafHistData.bypasses.length) {
+        wafHistBox.innerHTML = '<p class="empty-state">✓ No historical non-CDN origin bypass IPs uncovered.</p>';
+      } else {
+        wafHistData.bypasses.forEach((ob) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="color:#fb923c;">${escapeHtml(ob.origin_ip)}</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">Direct Host: ${escapeHtml(ob.target_domain)} · Status: HTTP ${ob.status_code}</small>
+            </div>
+            <span class="finding-tag" style="background:rgba(249,115,22,0.22);color:#fb923c;font-weight:600;">ORIGIN BYPASS</span>
+          `;
+          wafHistBox.appendChild(row);
+        });
+      }
+    }
+
+    // 9. Exposed Configuration Probing
+    const cfgData = findings.exposed_configs || { exposed_configs_found: 0, exposed_files: [] };
+    const cfgBadge = $('#adv-badge-config');
+    if (cfgBadge) {
+      cfgBadge.textContent = `${cfgData.exposed_configs_found} exposed`;
+      cfgBadge.classList.toggle('critical', cfgData.exposed_configs_found > 0);
+    }
+    const cfgBox = $('#adv-container-config');
+    if (cfgBox) {
+      cfgBox.replaceChildren();
+      if (!cfgData.exposed_files || !cfgData.exposed_files.length) {
+        cfgBox.innerHTML = '<p class="empty-state">✓ No sensitive configuration or backup files exposed.</p>';
+      } else {
+        cfgData.exposed_files.forEach((cf) => {
+          const row = document.createElement('div');
+          row.className = 'finding-row';
+          row.innerHTML = `
+            <div>
+              <strong class="finding-name" style="color:#f87171;">${escapeHtml(cf.path)} (${escapeHtml(cf.description)})</strong>
+              <small style="display:block;color:#8ea39b;font-size:10px;">URL: ${escapeHtml(cf.url)}</small>
+            </div>
+            <span class="finding-tag" style="background:rgba(239,68,68,0.22);color:#f87171;font-weight:600;">${escapeHtml(cf.severity)}</span>
+          `;
+          cfgBox.appendChild(row);
+        });
+      }
+    }
 
     // 4. Combined Download All Link
     const combinedBtn = $('#btn-download-combined-all');

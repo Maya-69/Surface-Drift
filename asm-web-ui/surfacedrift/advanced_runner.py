@@ -16,6 +16,12 @@ from .gemini_summarizer import generate_executive_summary
 from .http_probing import probe_subdomains
 from .risk_scoring import calculate_risk_score
 from .takeover import audit_subdomains_takeover
+from .secrets_scanner import extract_and_scan_js_secrets
+from .api_discovery import discover_shadow_apis
+from .eol_analyzer import audit_eol_technologies
+from .blh_detector import detect_broken_link_hijacking
+from .waf_origin import audit_waf_historical_origin_bypasses
+from .config_prober import probe_exposed_configurations
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +61,8 @@ async def run_advanced_assessment(
                 pass
 
     enabled_cats = set(categories) if categories else {
-        "http_probe", "takeover", "cloud_audit", "waf_bypass", "epss_kev", "email_sec"
+        "http_probe", "takeover", "cloud_audit", "waf_bypass", "epss_kev", "email_sec",
+        "js_secrets", "shadow_api", "eol_audit", "blh_audit", "waf_history", "config_probe"
     }
 
     emit(f"[-] SurfaceDrift CTEM Pipeline initialized for: {target}")
@@ -242,7 +249,92 @@ async def run_advanced_assessment(
             except Exception:
                 pass
 
-    # 7. Compute Composite Risk Score & Grade
+    # Extract live hosts and URLs for deep checks
+    live_target_urls = [h["url"] for h in http_probed_results if h.get("is_live") and h.get("url")]
+    if not live_target_urls:
+        live_target_urls = [f"https://{target}", f"http://{target}"]
+    live_subdomain_names = [h.get("subdomain") or target for h in http_probed_results if h.get("is_live")] or [target]
+
+    # 7. JavaScript Secrets Extraction Engine
+    js_secrets_data = {"scripts_scanned_count": 0, "secrets_found_count": 0, "findings": []}
+    if "js_secrets" in enabled_cats:
+        emit("[-] Extracting loaded JavaScript files and auditing for leaked credentials (AWS, Stripe, Google, Firebase)...")
+        js_secrets_data = await extract_and_scan_js_secrets(live_target_urls[:8])
+        sec_count = js_secrets_data.get("secrets_found_count", 0)
+        if sec_count > 0:
+            emit(f"[!] Alert: {sec_count} hardcoded credentials/tokens discovered across loaded JavaScript files!")
+            for sec in js_secrets_data.get("findings", [])[:5]:
+                emit(f"[*] Found {sec['secret_type']} ({sec['severity']}): {sec['redacted_value']} in {sec['script_url']}")
+        else:
+            emit(f"[+] JS Secrets check complete: {js_secrets_data.get('scripts_scanned_count', 0)} scripts analyzed, 0 secrets leaked")
+
+    # 8. Shadow API & Swagger Discovery
+    shadow_api_data = {"hosts_probed_count": 0, "exposed_endpoints_count": 0, "endpoints": []}
+    if "shadow_api" in enabled_cats:
+        emit("[-] Probing active hosts for Shadow APIs, Swagger/OpenAPI docs, and GraphQL introspection...")
+        shadow_api_data = await discover_shadow_apis(live_subdomain_names[:12])
+        api_count = shadow_api_data.get("exposed_endpoints_count", 0)
+        if api_count > 0:
+            emit(f"[!] Warning: {api_count} exposed API documentation / schema endpoints discovered!")
+            for ep in shadow_api_data.get("endpoints", [])[:5]:
+                emit(f"[*] {ep['type']} exposed at {ep['url']}")
+        else:
+            emit("[+] Shadow API probe complete: No unauthenticated API/Swagger documentation portals exposed")
+
+    # 9. End-of-Life (EOL) & Vulnerable Dependency Mapping
+    eol_data = {"eol_findings_count": 0, "findings": []}
+    if "eol_audit" in enabled_cats:
+        emit("[-] Correlating discovered technology stack against End-of-Life (EOL) & unsupported software registry...")
+        eol_data = audit_eol_technologies(http_probed_results)
+        eol_count = eol_data.get("eol_findings_count", 0)
+        if eol_count > 0:
+            emit(f"[!] Deprecation Warning: {eol_count} End-of-Life / legacy software runtime(s) detected!")
+            for e in eol_data.get("findings", [])[:5]:
+                emit(f"[*] {e['hostname']}: {e['product']} {e['detected_version']} is EOL (Threshold: {e['eol_threshold']}, Recommend: {e['recommended_version']})")
+        else:
+            emit("[+] EOL Audit complete: No unsupported legacy software runtimes detected")
+
+    # 10. Broken Link Hijacking (BLH) Detector
+    blh_data = {"external_domains_tested": 0, "broken_links_found": 0, "vulnerable_links": []}
+    if "blh_audit" in enabled_cats:
+        emit("[-] Crawling target homepage for outbound external links & auditing for Broken Link Hijacking (NXDOMAIN)...")
+        blh_data = await detect_broken_link_hijacking(target)
+        blh_count = blh_data.get("broken_links_found", 0)
+        if blh_count > 0:
+            emit(f"[!] High Risk: {blh_count} expired external domain(s) detected in outbound links (Broken Link Hijacking)!")
+            for b in blh_data.get("vulnerable_links", [])[:5]:
+                emit(f"[!] Expired domain: '{b['expired_domain']}' (NXDOMAIN) linked at {b['original_link']}")
+        else:
+            emit(f"[+] BLH Audit complete: {blh_data.get('external_domains_tested', 0)} external domains tested, all active")
+
+    # 11. WAF Origin Bypass Mapping (Historical OSINT)
+    waf_history_data = {"current_behind_cdn": False, "historical_ips_discovered": 0, "origin_bypasses_found": 0, "bypasses": []}
+    if "waf_history" in enabled_cats:
+        emit("[-] Querying historical certificate and DNS records to uncover potential WAF origin bypass backend IPs...")
+        raw_ips = [r.get("ip") or r.get("ip_address") for r in ip_records if r.get("ip") or r.get("ip_address")]
+        waf_history_data = await audit_waf_historical_origin_bypasses(target, raw_ips)
+        waf_hist_count = waf_history_data.get("origin_bypasses_found", 0)
+        if waf_hist_count > 0:
+            emit(f"[!] Origin IP Discovered: {waf_hist_count} backend IP(s) respond directly, bypassing CDN/WAF fronting!")
+            for ob in waf_history_data.get("bypasses", [])[:5]:
+                emit(f"[*] Backend Origin IP {ob['origin_ip']} responds with HTTP {ob['status_code']} to Host: '{target}'")
+        else:
+            emit("[+] WAF Historical Audit complete: No direct backend origin bypasses discovered")
+
+    # 12. Exposed Configuration Probing
+    config_probe_data = {"hosts_tested_count": 0, "exposed_configs_found": 0, "exposed_files": []}
+    if "config_probe" in enabled_cats:
+        emit("[-] Asynchronously probing live hosts for sensitive configuration files (/.git/config, /.env, /backup.zip, /server-status)...")
+        config_probe_data = await probe_exposed_configurations(live_subdomain_names[:12])
+        cfg_count = config_probe_data.get("exposed_configs_found", 0)
+        if cfg_count > 0:
+            emit(f"[!] CRITICAL EXPOSURE: {cfg_count} exposed configuration / backup files accessible without authentication!")
+            for cf in config_probe_data.get("exposed_files", [])[:5]:
+                emit(f"[!] {cf['description']} ({cf['severity']}) exposed at: {cf['url']}")
+        else:
+            emit("[+] Configuration Probing complete: No sensitive configuration or backup files exposed")
+
+    # 13. Compute Composite Risk Score & Grade
     emit("[-] Computing composite SurfaceDrift posture score and letter grade...")
     risk_eval = calculate_risk_score(
         critical_vulns_count=critical_vulns_count,
@@ -250,8 +342,13 @@ async def run_advanced_assessment(
         takeovers_count=len(takeovers_found),
         public_buckets_count=public_buckets_count,
         exposed_admin_ports_count=exposed_admin_ports,
-        waf_bypass_count=len(waf_bypasses),
+        waf_bypass_count=len(waf_bypasses) + waf_history_data.get("origin_bypasses_found", 0),
         email_risk_flag=email_sec_data.get("risk_flag", "SECURE_ENFORCED"),
+        exposed_configs_count=config_probe_data.get("exposed_configs_found", 0),
+        leaked_secrets_count=js_secrets_data.get("secrets_found_count", 0),
+        shadow_apis_count=shadow_api_data.get("exposed_endpoints_count", 0),
+        eol_findings_count=eol_data.get("eol_findings_count", 0),
+        broken_links_count=blh_data.get("broken_links_found", 0),
     )
 
     breakdown_dicts = [
@@ -262,7 +359,7 @@ async def run_advanced_assessment(
     for b in breakdown_dicts:
         emit(f"[*] Deduction [-{b['deduction']} pts] {b['category']}: {b['description']}")
 
-    # 8. Generate Threat Summary
+    # 14. Generate Threat Summary
     emit("[-] Generating executive threat exposure summary...")
     ai_summary = generate_executive_summary(
         target=target,
@@ -280,7 +377,7 @@ async def run_advanced_assessment(
     )
     emit(f"[+] Executive threat summary generated successfully")
 
-    # 9. Structure Final Advanced Assessment Report
+    # 15. Structure Final Advanced Assessment Report
     advanced_report = {
         "scan_id": scan_id,
         "target": target,
@@ -316,6 +413,12 @@ async def run_advanced_assessment(
                 "cves": weaponized_vulns,
             },
             "email_security": email_sec_data,
+            "js_secrets": js_secrets_data,
+            "shadow_apis": shadow_api_data,
+            "eol_software": eol_data,
+            "broken_links": blh_data,
+            "waf_history": waf_history_data,
+            "exposed_configs": config_probe_data,
         },
         "logs": logs_collected,
     }

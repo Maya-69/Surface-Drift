@@ -72,6 +72,12 @@ class ContinueSurfaceDriftRequest(BaseModel):
             "waf_bypass",
             "epss_kev",
             "email_sec",
+            "js_secrets",
+            "shadow_api",
+            "eol_audit",
+            "blh_audit",
+            "waf_history",
+            "config_probe",
         ]
     )
 

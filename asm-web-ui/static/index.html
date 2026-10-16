@@ -389,6 +389,72 @@
                   <span class="cat-desc">Deep RFC evaluation of SPF, DMARC, and MX records to evaluate spoofability</span>
                 </div>
               </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-js-secrets" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">JavaScript Secrets Extraction</span>
+                    <span class="cat-chip chip-critical">Secrets</span>
+                  </div>
+                  <span class="cat-desc">High-entropy regex checks in loaded .js for AWS, Stripe, Google, and Firebase keys</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-shadow-api" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Shadow API &amp; Swagger Discovery</span>
+                    <span class="cat-chip chip-warning">APIs</span>
+                  </div>
+                  <span class="cat-desc">Probe subdomains for /swagger.json, /openapi.yaml, and GraphQL introspection</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-eol-audit" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">EOL &amp; Vulnerable Dependencies</span>
+                    <span class="cat-chip">EOL Stack</span>
+                  </div>
+                  <span class="cat-desc">Passive correlation of banners &amp; DOM against End-of-Life software (ancient PHP/jQuery)</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-blh-audit" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Broken Link Hijacking (BLH)</span>
+                    <span class="cat-chip chip-warning">BLH Risk</span>
+                  </div>
+                  <span class="cat-desc">Crawl target homepages, scrape outbound links, and query DNS for expired NXDOMAINs</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-waf-history" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">WAF Origin Bypass (Historical)</span>
+                    <span class="cat-chip">Origin IP</span>
+                  </div>
+                  <span class="cat-desc">Cross-reference historical certificates &amp; DNS to discover direct backend origin IPs</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-config-probe" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Exposed Configuration Probing</span>
+                    <span class="cat-chip chip-critical">Misconfig</span>
+                  </div>
+                  <span class="cat-desc">Asynchronously probe for /.git/config, /.env, /backup.zip, and /server-status</span>
+                </div>
+              </label>
             </div>
 
             <!-- Action button -->
@@ -528,6 +594,72 @@
                   </div>
                   <div class="finding-scroll-box" id="adv-container-email">
                     <p class="empty-state">Email audit pending.</p>
+                  </div>
+                </div>
+
+                <!-- JavaScript Secrets -->
+                <div class="finding-panel" id="panel-js-secrets">
+                  <div class="finding-panel-head">
+                    <h5>Extracted JavaScript Secrets</h5>
+                    <span class="finding-badge" id="adv-badge-secrets">0 secrets</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-secrets">
+                    <p class="empty-state">No leaked credentials found in loaded JavaScript files.</p>
+                  </div>
+                </div>
+
+                <!-- Shadow APIs & Swagger -->
+                <div class="finding-panel" id="panel-shadow-api">
+                  <div class="finding-panel-head">
+                    <h5>Shadow APIs &amp; Swagger Docs</h5>
+                    <span class="finding-badge" id="adv-badge-shadow-api">0 endpoints</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-shadow-api">
+                    <p class="empty-state">No unauthenticated API specifications or GraphQL endpoints exposed.</p>
+                  </div>
+                </div>
+
+                <!-- EOL & Vulnerable Dependencies -->
+                <div class="finding-panel" id="panel-eol-stack">
+                  <div class="finding-panel-head">
+                    <h5>End-of-Life &amp; Legacy Stack</h5>
+                    <span class="finding-badge" id="adv-badge-eol">0 EOL</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-eol">
+                    <p class="empty-state">No deprecated or EOL runtimes detected in perimeter.</p>
+                  </div>
+                </div>
+
+                <!-- Broken Link Hijacking (BLH) -->
+                <div class="finding-panel" id="panel-blh">
+                  <div class="finding-panel-head">
+                    <h5>Broken Link Hijacking (BLH)</h5>
+                    <span class="finding-badge" id="adv-badge-blh">0 broken</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-blh">
+                    <p class="empty-state">Zero expired external domains detected in outbound links.</p>
+                  </div>
+                </div>
+
+                <!-- WAF Origin Bypass (Historical) -->
+                <div class="finding-panel" id="panel-waf-history">
+                  <div class="finding-panel-head">
+                    <h5>Historical WAF Origin Bypasses</h5>
+                    <span class="finding-badge" id="adv-badge-waf-history">0 origins</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-waf-history">
+                    <p class="empty-state">No historical non-CDN origin bypass IPs uncovered.</p>
+                  </div>
+                </div>
+
+                <!-- Exposed Configuration & Backups -->
+                <div class="finding-panel" id="panel-config-probe">
+                  <div class="finding-panel-head">
+                    <h5>Exposed Configurations &amp; Backups</h5>
+                    <span class="finding-badge" id="adv-badge-config">0 exposed</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-config">
+                    <p class="empty-state">No sensitive configuration or backup files exposed.</p>
                   </div>
                 </div>
               </div>
