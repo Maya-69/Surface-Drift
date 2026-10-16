@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#061214" />
+  <meta name="description" content="SurfaceDrift — Enterprise continuous threat exposure and attack surface management platform." />
+  <title>SurfaceDrift — External Attack Surface &amp; CTEM Platform</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="SurfaceDrift home">
+      <svg class="brand-mark" viewBox="0 0 36 36" aria-hidden="true">
+        <path d="M18 2.8 32 10.7v14.6L18 33.2 4 25.3V10.7L18 2.8Z" />
+        <path d="M18 8.1 27 13.2v9.6l-9 5.1-9-5.1v-9.6l9-5.1Z" />
+        <path d="m4.5 10.9 13.5 7.7 13.5-7.7M18 18.6v14" />
+        <circle cx="18" cy="18.5" r="2.1" />
+      </svg>
+      <span class="brand-name">Surface<span>Drift</span></span>
+    </a>
+
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Main navigation">
+        <a href="#approach" data-scroll="approach">Approach</a>
+        <a href="#capabilities" data-scroll="capabilities">Capabilities</a>
+        <a class="nav-cta" href="/scan">Start a scan <span aria-hidden="true">↗</span></a>
+      </nav>
+
+      <!-- History button -->
+      <button class="nav-icon-btn" id="open-history-btn" type="button" title="View scan history">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="9"/>
+          <polyline points="12 7 12 12 15 15"/>
+        </svg>
+        <span>History</span>
+        <span class="history-badge" id="history-badge">0</span>
+      </button>
+
+      <!-- User Auth Section -->
+      <div class="auth-section" id="auth-section">
+        <!-- Sign in button (visible when logged out) -->
+        <button class="google-login-btn" id="google-login-btn" type="button">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
+
+        <!-- Logged-in profile pill (hidden by default) -->
+        <div class="user-pill" id="user-pill" hidden>
+          <img class="user-avatar" id="user-avatar" src="" alt="User Avatar" />
+          <span class="user-name" id="user-name">User</span>
+          <button class="user-menu-btn" id="user-menu-btn" type="button" aria-label="User menu">▾</button>
+          <div class="user-dropdown" id="user-dropdown" hidden>
+            <div class="dropdown-header">
+              <strong id="dropdown-user-name">User</strong>
+              <small id="dropdown-user-email">user@example.com</small>
+            </div>
+            <button class="dropdown-item" id="dropdown-history-btn" type="button">Scan History</button>
+            <button class="dropdown-item text-danger" id="logout-btn" type="button">Sign Out</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="mobile-menu" type="button" aria-label="Open navigation" aria-expanded="false"><span></span><span></span></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="page landing-page" id="landing-view">
+      <div class="hero-shell">
+        <div class="hero-orbit orbit-a" aria-hidden="true"></div>
+        <div class="hero-orbit orbit-b" aria-hidden="true"></div>
+        <div class="hero-orbit orbit-c" aria-hidden="true"></div>
+        <span class="orbit-node node-a" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12s3.3-6 9-6 9 6 9 6-3.3 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.5"/></svg></span>
+        <span class="orbit-node node-b" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.7 3.1 7.7 7.5 9.5 4.4-1.8 7.5-4.8 7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <span class="orbit-node node-c" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.1 2.2 3 4.9 3 8s-.9 5.8-3 8c-2.1-2.2-3-4.9-3-8s.9-5.8 3-8Z"/></svg></span>
+        <span class="orbit-dot dot-a" aria-hidden="true"></span><span class="orbit-dot dot-b" aria-hidden="true"></span><span class="orbit-dot dot-c" aria-hidden="true"></span>
+
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span class="live-dot"></span> Active &amp; Passive Attack Surface Intelligence</p>
+          <h1>Know what’s<br /><em>out there.</em></h1>
+          <p class="hero-subtitle">See your digital surface from the outside in. Discover subdomains, DNS records, public IPs, open ports, cloud storage buckets, and email footprints connected to your organisation.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="/scan">Explore your surface <span class="button-arrow" aria-hidden="true">↗</span></a>
+            <a class="text-link" href="#approach" data-scroll="approach">See how it works <span aria-hidden="true">↓</span></a>
+          </div>
+          <p class="hero-footnote"><span class="tiny-shield" aria-hidden="true">◇</span> Passive OSINT &amp; Active Deep Recon <span class="footnote-separator">·</span> Built for authorised security assessments</p>
+        </div>
+
+        <div class="hero-bottomline" aria-hidden="true"><span>Observe</span><i></i><span>Understand</span><i></i><span>Act with clarity</span></div>
+        <div class="scroll-cue" aria-hidden="true"><span></span> Scroll to explore</div>
+      </div>
+
+      <section class="intro-strip reveal" id="approach">
+        <div class="intro-label">01 / THE APPROACH</div>
+        <div class="intro-heading">Visibility, without<br /><em>the blind spots.</em></div>
+        <div class="intro-copy">A comprehensive scan combining Certificate Transparency, DNSDumpster, HackerTarget, VirusTotal, URLScan, BGP routing, and Shodan/Censys intelligence into one unified report.</div>
+      </section>
+
+      <section class="process-section" id="capabilities">
+        <div class="section-head reveal">
+          <div><p class="eyebrow">02 / A SIMPLE PROCESS</p><h2>From domain to<br /><em>discovery.</em></h2></div>
+          <p>One starting point. A structured view of what the scan can find.</p>
+        </div>
+        <div class="process-grid">
+          <article class="process-card reveal"><span class="process-number">01</span><div class="process-icon icon-target"><span></span></div><h3>Enter a target</h3><p>Start with a domain or public IP you’re authorised to assess.</p><span class="card-bottom">A clear starting point <b>↗</b></span></article>
+          <article class="process-card reveal"><span class="process-number">02</span><div class="process-icon icon-radar"><span></span><i></i></div><h3>Follow the signals</h3><p>Track subdomains, DNS information, IPs and available public intelligence as the scan runs.</p><span class="card-bottom">Progress, as it happens <b>↗</b></span></article>
+          <article class="process-card reveal"><span class="process-number">03</span><div class="process-icon icon-report"><span></span><i></i><b></b></div><h3>Take the report</h3><p>Review a concise summary and download the generated result files in one ZIP.</p><span class="card-bottom">Your results, in hand <b>↗</b></span></article>
+        </div>
+      </section>
+
+      <section class="closing-cta reveal">
+        <div class="closing-glow" aria-hidden="true"></div>
+        <p class="eyebrow">THE NEXT STEP</p>
+        <h2>The first step is<br /><em>knowing your surface.</em></h2>
+        <a class="button button-primary" href="/scan">Start exploring <span class="button-arrow" aria-hidden="true">↗</span></a>
+      </section>
+      <footer class="site-footer"><a class="brand footer-brand" href="/"><svg class="brand-mark" viewBox="0 0 36 36" aria-hidden="true"><path d="M18 2.8 32 10.7v14.6L18 33.2 4 25.3V10.7L18 2.8Z"/><path d="M18 8.1 27 13.2v9.6l-9 5.1-9-5.1v-9.6l9-5.1Z"/><path d="m4.5 10.9 13.5 7.7 13.5-7.7M18 18.6v14"/></svg><span class="brand-name">Surface<span>Drift</span></span></a><span>Continuous Threat Exposure Management.</span><span>Only assess systems you’re authorised to test.</span></footer>
+    </section>
+
+    <section class="page scan-page" id="scan-view" hidden>
+      <div class="scan-topline">
+        <a href="/" class="back-link"><span aria-hidden="true">←</span> Back to overview</a>
+        <div class="scan-tag"><span class="live-dot"></span> SURFACEDRIFT / SCAN WORKSPACE</div>
+      </div>
+      <div class="scan-wrap">
+        <div class="scan-form-panel reveal" id="scan-form-panel">
+          <div class="scan-heading-block">
+            <p class="eyebrow">ATTACK SURFACE DISCOVERY</p>
+            <h1>Start with a<br /><em>domain.</em></h1>
+            <p>Enter the public address you want to understand. We’ll map the available signals and package the results for you.</p>
+          </div>
+          <form id="scan-form">
+            <label for="target-input" class="field-label">Target domain or website URL</label>
+            <div class="input-shell">
+              <span class="input-prefix" aria-hidden="true">↗</span>
+              <input id="target-input" name="target" type="text" placeholder="example.com" autocomplete="url" autocapitalize="none" spellcheck="false" required maxlength="300" />
+              <button class="clear-input" id="clear-target" type="button" aria-label="Clear target" hidden>×</button>
+            </div>
+            <div class="field-hint">
+              <span>Domains and public IPs are accepted.</span>
+              <span>HTTPS is assumed when omitted.</span>
+            </div>
+
+            <!-- Recon Mode Selector -->
+            <div class="mode-selector-block">
+              <span class="field-label">Reconnaissance Mode</span>
+              <div class="mode-options-grid">
+                <label class="mode-card active" id="mode-passive-card">
+                  <input type="radio" name="recon-mode" value="passive" checked />
+                  <div class="mode-card-header">
+                    <span class="mode-badge passive">Passive (Stealth OSINT)</span>
+                    <span class="mode-timing">Fast · ~20s</span>
+                  </div>
+                  <p class="mode-desc">Non-intrusive reconnaissance via Certificate Transparency (crt.sh), HackerTarget, VirusTotal, URLScan, and DNSDumpster. No noisy packets sent directly to target.</p>
+                </label>
+
+                <label class="mode-card" id="mode-active-card">
+                  <input type="radio" name="recon-mode" value="active" />
+                  <div class="mode-card-header">
+                    <span class="mode-badge active">Active (Deep Recon)</span>
+                    <span class="mode-timing">Deep · 1-3m</span>
+                  </div>
+                  <p class="mode-desc">Deep perimeter expansion with multithreaded DNS wordlist brute-forcing, active service probing, and recursive BGP/ASN routing expansion.</p>
+                </label>
+              </div>
+            </div>
+
+            <label class="consent-row">
+              <input id="authorized-check" type="checkbox" required />
+              <span class="custom-check" aria-hidden="true"></span>
+              <span>I am authorised to assess this domain and its associated assets.</span>
+            </label>
+
+            <button class="button button-primary submit-scan" id="start-scan-button" type="submit">
+              <span>Start Assessment</span>
+              <span class="button-arrow" aria-hidden="true">↗</span>
+            </button>
+            <p class="form-note">
+              <span class="note-mark">◇</span> Scans are securely recorded to your user history. Sign in with Google to access past reports.
+            </p>
+          </form>
+          <div id="preflight-note" class="preflight-note" hidden></div>
+        </div>
+
+        <!-- Live Scan Progress View with Real-time Telemetry -->
+        <div class="scan-progress-panel" id="scan-progress-panel" hidden aria-live="polite">
+          <div class="progress-top">
+            <div>
+              <p class="eyebrow"><span class="live-dot"></span> LIVE SCAN</p>
+              <h2 id="progress-title">Mapping the surface<span class="animated-ellipsis">…</span></h2>
+            </div>
+            <span class="progress-percent" id="progress-percent">01%</span>
+          </div>
+
+          <div class="target-running">
+            <span class="target-orbit"><span></span></span>
+            <div>
+              <small>ASSESSING TARGET</small>
+              <strong id="running-target">example.com</strong>
+            </div>
+            <span class="scan-mode-tag" id="running-mode-tag">Passive</span>
+            <span class="running-status"><i></i><span id="running-status-text">Preparing</span></span>
+          </div>
+
+          <div class="progress-track"><span id="progress-fill"></span></div>
+          <div class="progress-meta">
+            <span id="progress-detail">Preparing the scanner…</span>
+            <span id="elapsed-time">00:00</span>
+          </div>
+
+          <!-- Active Task Ticker -->
+          <div class="live-action-ticker" id="live-action-ticker">
+            <span class="ticker-dot"></span>
+            <span class="ticker-label">ACTIVE SUBTASK:</span>
+            <span class="ticker-text" id="ticker-text">Initializing reconnaissance engine...</span>
+          </div>
+
+          <div class="stage-list" id="stage-list">
+            <div class="stage-item" data-stage="validate">
+              <span class="stage-indicator">01</span>
+              <div><strong>Validate target</strong><small>Checking domain format, DNS root, and scope</small></div>
+              <span class="stage-state">Waiting</span>
+            </div>
+            <div class="stage-item" data-stage="subdomains">
+              <span class="stage-indicator">02</span>
+              <div><strong>Discover subdomains</strong><small>Certificate Transparency (crt.sh), HackerTarget &amp; OSINT</small></div>
+              <span class="stage-state">Waiting</span>
+            </div>
+            <div class="stage-item" data-stage="dns">
+              <span class="stage-indicator">03</span>
+              <div><strong>Collect DNS &amp; IP intelligence</strong><small>Querying A, MX, SPF, DMARC, and routing ASNs</small></div>
+              <span class="stage-state">Waiting</span>
+            </div>
+            <div class="stage-item" data-stage="email">
+              <span class="stage-indicator">04</span>
+              <div><strong>Cloud &amp; Identity intelligence</strong><small>AWS S3 buckets, email patterns, and employee profiles</small></div>
+              <span class="stage-state">Waiting</span>
+            </div>
+            <div class="stage-item" data-stage="report">
+              <span class="stage-indicator">05</span>
+              <div><strong>Prepare the report</strong><small>Packaging artifacts and generating ZIP bundle</small></div>
+              <span class="stage-state">Waiting</span>
+            </div>
+          </div>
+
+          <!-- Live Cyber Terminal Console (Open by Default!) -->
+          <div class="terminal-console-wrap">
+            <div class="terminal-header">
+              <div class="terminal-dots">
+                <span class="terminal-dot red"></span>
+                <span class="terminal-dot yellow"></span>
+                <span class="terminal-dot green"></span>
+              </div>
+              <span class="terminal-title">SCANNER TELEMETRY CONSOLE</span>
+              <div class="terminal-actions">
+                <span class="terminal-event-count" id="log-count">0 events</span>
+                <button class="terminal-btn" id="terminal-clear-btn" type="button" title="Clear console">Clear</button>
+              </div>
+            </div>
+            <div class="terminal-body" id="log-lines">
+              <p class="term-line-info">Waiting for scanner engine output…</p>
+            </div>
+          </div>
+
+          <div id="scan-error" class="scan-error" hidden>
+            <strong>We couldn’t complete this scan.</strong>
+            <p id="scan-error-text"></p>
+            <button class="button button-secondary" id="try-again-button" type="button">Try another scan <span aria-hidden="true">↗</span></button>
+          </div>
+        </div>
+
+        <!-- Scan Report View -->
+        <section class="report-panel" id="report-panel" hidden aria-live="polite">
+          <div class="report-header-shell">
+            <div class="report-success">
+              <div class="success-ring"><svg viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg></div>
+              <div>
+                <p class="eyebrow"><span class="live-dot"></span> SCAN COMPLETE <span class="mode-pill-report" id="report-mode-pill">Passive</span></p>
+                <h2>Surface mapped:<br /><em id="report-target-domain">target.com</em></h2>
+                <p id="report-description">The scan is complete. Review your interactive findings below or download the full archive.</p>
+              </div>
+            </div>
+            <div class="report-top-actions">
+              <button class="button button-primary download-button-top" id="download-report-button-top" type="button">
+                <span>Download Report</span>
+                <span class="download-size" id="download-size-top">ZIP</span>
+                <span class="button-arrow" aria-hidden="true">↓</span>
+              </button>
+              <button class="button button-secondary new-scan-btn-top" id="new-scan-button-top" type="button">
+                <span>Scan Another Target</span>
+                <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- SurfaceDrift Continuous Exposure Bridge -->
+          <div class="surfacedrift-bridge-card" id="surfacedrift-bridge-card">
+            <div class="bridge-top">
+              <div class="bridge-icon-wrap">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+              </div>
+              <div class="bridge-text">
+                <span class="bridge-badge">CONTINUOUS THREAT EXPOSURE MANAGEMENT</span>
+                <h3 class="bridge-heading">Continue with SurfaceDrift Advanced Assessment</h3>
+                <p class="bridge-sub">
+                  Initial reconnaissance completed. Would you like to use the discovered reconnaissance intelligence (<strong id="bridge-subdomain-count">0</strong> subdomains, <strong id="bridge-ip-count">0</strong> IPs) to execute deep exposure validation, takeover audits, cloud storage audits, and threat scoring?
+                </p>
+              </div>
+            </div>
+
+            <!-- Category Selection Checkboxes -->
+            <div class="bridge-categories-grid">
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-http-probe" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">HTTP Probing &amp; Tech Stack</span>
+                    <span class="cat-chip">Active</span>
+                  </div>
+                  <span class="cat-desc">Live endpoints, response codes, server banners, detected frameworks (Nginx, React, PHP, etc.)</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-takeover" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Subdomain Takeover Audit</span>
+                    <span class="cat-chip chip-critical">High Risk</span>
+                  </div>
+                  <span class="cat-desc">Verify dangling CNAMEs across 14 cloud services (GitHub, AWS S3, Heroku, Shopify, etc.)</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-cloud-audit" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Cloud Storage Auditing</span>
+                    <span class="cat-chip chip-warning">Permutations</span>
+                  </div>
+                  <span class="cat-desc">Permutation search for public/leaked AWS S3 buckets, Azure Blobs, and GCP GCS buckets</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-waf-bypass" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Infrastructure &amp; WAF Origin Bypass</span>
+                    <span class="cat-chip">CDN</span>
+                  </div>
+                  <span class="cat-desc">CDN edge detection (Cloudflare, Akamai, Fastly) &amp; direct origin bypass hunt</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-epss-kev" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Vulnerability &amp; Exploit Prioritization</span>
+                    <span class="cat-chip chip-critical">EPSS / KEV</span>
+                  </div>
+                  <span class="cat-desc">EPSS exploit probabilities &amp; CISA Known Exploited Vulnerabilities (KEV)</span>
+                </div>
+              </label>
+
+              <label class="category-checkbox-card">
+                <input type="checkbox" id="cat-email-sec" checked />
+                <div class="cat-body">
+                  <div class="cat-title-row">
+                    <span class="cat-title">Email Spoofing &amp; RFC Posture</span>
+                    <span class="cat-chip">Identity</span>
+                  </div>
+                  <span class="cat-desc">Deep RFC evaluation of SPF, DMARC, and MX records to evaluate spoofability</span>
+                </div>
+              </label>
+            </div>
+
+            <!-- Action button -->
+            <div class="bridge-action-row">
+              <button class="button button-primary bridge-launch-btn" id="btn-run-surfacedrift" type="button">
+                <span>Execute SurfaceDrift Advanced Analysis</span>
+                <span class="button-arrow" aria-hidden="true">⚡</span>
+              </button>
+              <div class="bridge-runner-status" id="bridge-runner-status" hidden>
+                <div class="spinner-dot"></div>
+                <span id="bridge-status-msg">Running SurfaceDrift assessment engines...</span>
+              </div>
+            </div>
+
+            <!-- SurfaceDrift CTEM Telemetry Console -->
+            <div class="terminal-console-wrap surfacedrift-terminal" id="surfacedrift-terminal" hidden style="margin-top: 18px;">
+              <div class="terminal-header">
+                <div class="terminal-dots">
+                  <span class="terminal-dot red"></span>
+                  <span class="terminal-dot yellow"></span>
+                  <span class="terminal-dot green"></span>
+                </div>
+                <span class="terminal-title">SURFACEDRIFT CTEM TELEMETRY CONSOLE</span>
+                <div class="terminal-actions">
+                  <span class="terminal-event-count" id="adv-log-count">0 events</span>
+                  <button class="terminal-btn" id="adv-terminal-clear-btn" type="button" title="Clear console">Clear</button>
+                </div>
+              </div>
+              <div class="terminal-body" id="adv-log-lines" style="max-height: 240px;">
+                <p class="term-line-info">Waiting for SurfaceDrift engine telemetry…</p>
+              </div>
+            </div>
+
+            <!-- Advanced CTEM & Threat Assessment Results View -->
+            <div class="advanced-results-view" id="advanced-results-view" hidden>
+              <div class="advanced-divider">
+                <span>SURFACEDRIFT COMPOSITE CTEM FINDINGS</span>
+              </div>
+
+              <!-- Composite Score Card & Gauge -->
+              <div class="score-card-box">
+                <div class="score-gauge-side">
+                  <div class="grade-circle" id="adv-grade-circle">
+                    <span class="grade-letter" id="adv-grade-letter">A</span>
+                  </div>
+                  <div class="score-value-wrap">
+                    <div class="score-main"><strong id="adv-score-val">100</strong><span>/100</span></div>
+                    <span class="score-title">SurfaceDrift Exposure Score</span>
+                  </div>
+                </div>
+                <div class="score-trail-side">
+                  <h4>Posture Deduction Trail</h4>
+                  <div class="deductions-container" id="adv-deductions-container">
+                    <span class="no-deductions">✓ Zero deductions — Optimal perimeter exposure posture.</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Summary -->
+              <div class="ai-summary-card">
+                <div class="ai-summary-head">
+                  <div class="ai-head-title">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                    <strong>Summary</strong>
+                  </div>
+                  <span class="ai-tag" id="adv-ai-source-tag">Summary</span>
+                </div>
+                <div class="ai-summary-content markdown-body" id="adv-ai-summary-content">
+                  <p>Generating summary...</p>
+                </div>
+              </div>
+
+              <!-- Deep Finding Panels Grid -->
+              <div class="deep-findings-grid">
+                <!-- HTTP Live Hosts & Tech Stack -->
+                <div class="finding-panel" id="panel-http-probes">
+                  <div class="finding-panel-head">
+                    <h5>HTTP Live Services &amp; Tech Stacks</h5>
+                    <span class="finding-badge" id="adv-badge-http">0 live</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-http">
+                    <p class="empty-state">No live web services probed.</p>
+                  </div>
+                </div>
+
+                <!-- Subdomain Takeovers -->
+                <div class="finding-panel" id="panel-takeovers">
+                  <div class="finding-panel-head">
+                    <h5>Subdomain Takeovers</h5>
+                    <span class="finding-badge" id="adv-badge-takeover">0 found</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-takeover">
+                    <p class="empty-state">No dangling CNAME takeovers detected.</p>
+                  </div>
+                </div>
+
+                <!-- Cloud Storage Buckets -->
+                <div class="finding-panel" id="panel-cloud">
+                  <div class="finding-panel-head">
+                    <h5>Cloud Storage Buckets (S3, Azure, GCP)</h5>
+                    <span class="finding-badge" id="adv-badge-cloud">0 found</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-cloud">
+                    <p class="empty-state">No exposed storage buckets found.</p>
+                  </div>
+                </div>
+
+                <!-- WAF Origin Bypass -->
+                <div class="finding-panel" id="panel-waf">
+                  <div class="finding-panel-head">
+                    <h5>WAF Origin Bypass &amp; Direct IPs</h5>
+                    <span class="finding-badge" id="adv-badge-waf">0 origins</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-waf">
+                    <p class="empty-state">No direct origin bypass IPs discovered.</p>
+                  </div>
+                </div>
+
+                <!-- Weaponized CVEs -->
+                <div class="finding-panel" id="panel-cves">
+                  <div class="finding-panel-head">
+                    <h5>Weaponized CVEs &amp; CISA KEV</h5>
+                    <span class="finding-badge" id="adv-badge-cves">0 weaponized</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-cves">
+                    <p class="empty-state">No weaponized vulnerabilities found.</p>
+                  </div>
+                </div>
+
+                <!-- Email Security Posture -->
+                <div class="finding-panel" id="panel-email-sec">
+                  <div class="finding-panel-head">
+                    <h5>Email Posture &amp; Anti-Spoofing</h5>
+                    <span class="finding-badge" id="adv-badge-email">RFC Verified</span>
+                  </div>
+                  <div class="finding-scroll-box" id="adv-container-email">
+                    <p class="empty-state">Email audit pending.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Consolidated Combined Download Package Card -->
+              <div class="combined-package-banner">
+                <div class="combined-banner-left">
+                  <div class="package-icon">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                      <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                      <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                    </svg>
+                  </div>
+                  <div>
+                    <strong>Download Combined Full SurfaceDrift Assessment Bundle</strong>
+                    <span>Includes all initial reconnaissance assets (subdomains, IPs, emails, DNS, buckets) plus complete SurfaceDrift deep CTEM reports, HTTP probe data, takeover audits, and AI executive summary.</span>
+                  </div>
+                </div>
+                <a class="button button-primary btn-download-combined-all" id="btn-download-combined-all" href="#" download>
+                  <span>Download Complete Assessment (ZIP)</span>
+                  <span class="button-arrow" aria-hidden="true">↓</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section Navigation Tabs -->
+          <nav class="results-tab-bar" aria-label="Scan Results Navigation">
+            <button class="tab-link active" type="button" data-tab="overview">Overview</button>
+            <button class="tab-link" type="button" data-tab="subdomains">Subdomains <span class="tab-badge" id="badge-subdomains">0</span></button>
+            <button class="tab-link" type="button" data-tab="dns">DNS Records <span class="tab-badge" id="badge-dns">0</span></button>
+            <button class="tab-link" type="button" data-tab="ips">IP Addresses <span class="tab-badge" id="badge-ips">0</span></button>
+            <button class="tab-link" type="button" data-tab="ports">Ports &amp; Vulns <span class="tab-badge" id="badge-ports">0</span></button>
+            <button class="tab-link" type="button" data-tab="emails">Email Addresses <span class="tab-badge" id="badge-emails">0</span></button>
+            <button class="tab-link" type="button" data-tab="guessed">Guessed Emails <span class="tab-badge" id="badge-guessed">0</span></button>
+            <button class="tab-link" type="button" data-tab="security">Email Security <span class="tab-badge" id="badge-security">SPF/DMARC</span></button>
+            <button class="tab-link" type="button" data-tab="employees">Employees <span class="tab-badge" id="badge-employees">0</span></button>
+            <button class="tab-link" type="button" data-tab="buckets">Cloud Buckets <span class="tab-badge" id="badge-buckets">0</span></button>
+            <button class="tab-link" type="button" data-tab="creds">Credentials &amp; Hashes <span class="tab-badge" id="badge-creds">0</span></button>
+            <button class="tab-link" type="button" data-tab="artifacts">Additional Artifacts <span class="tab-badge" id="badge-artifacts">0</span></button>
+          </nav>
+
+          <!-- Tab Panels Container -->
+          <div class="results-tab-content">
+            <!-- 1. OVERVIEW -->
+            <div class="tab-panel active" id="pane-overview">
+              <div class="empty-scan-notice" id="empty-scan-notice" hidden>
+                <div class="notice-info">
+                  <span class="notice-badge">Notice</span>
+                  <div>
+                    <strong>No assets were discovered or scan was interrupted.</strong>
+                    <p>Zero records were recorded for this target in this scan. You can start a new scan or switch recon modes below.</p>
+                  </div>
+                </div>
+                <button class="button button-primary btn-notice-scan" id="notice-new-scan-btn" type="button">Start New Scan ↗</button>
+              </div>
+
+              <div class="report-summary-head">
+                <span>INTELLIGENCE METRICS</span>
+                <span id="report-duration">—</span>
+              </div>
+              <div class="report-metrics" id="report-metrics"></div>
+
+              <div class="overview-grid">
+                <div class="overview-card">
+                  <h4>Target Metadata</h4>
+                  <ul class="meta-list">
+                    <li><span>Target host:</span> <strong id="meta-target">—</strong></li>
+                    <li><span>Scan duration:</span> <span id="meta-duration">—</span></li>
+                    <li><span>Completed at:</span> <span id="meta-completed">—</span></li>
+                    <li><span>Recon mode:</span> <span class="status-tag" id="meta-mode">Passive / Stealth</span></li>
+                    <li><span>Output folder:</span> <span id="meta-folder" class="mono-text">—</span></li>
+                  </ul>
+                </div>
+                <div class="overview-card">
+                  <h4>Quick Category Links</h4>
+                  <div class="quick-links-grid">
+                    <button class="quick-jump-btn" data-target-tab="subdomains">Subdomains <span class="tab-badge" id="quick-badge-subdomains">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="dns">DNS Records <span class="tab-badge" id="quick-badge-dns">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="ips">IP Addresses <span class="tab-badge" id="quick-badge-ips">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="ports">Ports &amp; Vulns <span class="tab-badge" id="quick-badge-ports">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="emails">Emails <span class="tab-badge" id="quick-badge-emails">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="security">Email Security <span class="tab-badge">SPF/DMARC</span></button>
+                    <button class="quick-jump-btn" data-target-tab="employees">Employees <span class="tab-badge" id="quick-badge-employees">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="buckets">Cloud Buckets <span class="tab-badge" id="quick-badge-buckets">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="artifacts">Artifacts <span class="tab-badge" id="quick-badge-artifacts">0</span></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. SUBDOMAINS -->
+            <div class="tab-panel" id="pane-subdomains">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-subdomains" placeholder="Filter subdomains..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-subdomains">Showing 0 of 0</span>
+                  <button class="btn-copy-toolbar" id="btn-copy-subdomains" type="button">Copy All</button>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <ul class="clean-list" id="list-subdomains"></ul>
+              </div>
+            </div>
+
+            <!-- 3. DNS RECORDS -->
+            <div class="tab-panel" id="pane-dns">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-dns" placeholder="Filter DNS records..." autocomplete="off" />
+                </div>
+                <div class="filter-pills" id="dns-type-pills">
+                  <button class="pill-btn active" data-filter-type="ALL">All</button>
+                  <button class="pill-btn" data-filter-type="A">A</button>
+                  <button class="pill-btn" data-filter-type="AAAA">AAAA</button>
+                  <button class="pill-btn" data-filter-type="MX">MX</button>
+                  <button class="pill-btn" data-filter-type="NS">NS</button>
+                  <button class="pill-btn" data-filter-type="TXT">TXT</button>
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-dns">Showing 0 of 0</span>
+                  <button class="btn-copy-toolbar" id="btn-copy-dns" type="button">Copy All</button>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <ul class="clean-list" id="list-dns"></ul>
+              </div>
+            </div>
+
+            <!-- 4. IP ADDRESSES -->
+            <div class="tab-panel" id="pane-ips">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-ips" placeholder="Filter IPs, ASN or Location..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-ips">Showing 0 of 0</span>
+                  <button class="btn-copy-toolbar" id="btn-copy-ips" type="button">Copy IPs</button>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <table class="cyber-table" id="table-ips">
+                  <thead>
+                    <tr>
+                      <th>IP Address</th>
+                      <th>ASN</th>
+                      <th>Organization / Description</th>
+                      <th>Location</th>
+                      <th>Ports</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 5. PORTS & VULNS -->
+            <div class="tab-panel" id="pane-ports">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-ports" placeholder="Filter by port, IP or vulnerability..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-ports">Showing 0 of 0</span>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <div id="container-ports"></div>
+              </div>
+            </div>
+
+            <!-- 6. EMAILS -->
+            <div class="tab-panel" id="pane-emails">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-emails" placeholder="Filter emails..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-emails">Showing 0 of 0</span>
+                  <button class="btn-copy-toolbar" id="btn-copy-emails" type="button">Copy Emails</button>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <ul class="clean-list" id="list-emails"></ul>
+              </div>
+            </div>
+
+            <!-- 7. GUESSED EMAILS -->
+            <div class="tab-panel" id="pane-guessed">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-guessed" placeholder="Filter guessed emails..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-guessed">Showing 0 of 0</span>
+                  <button class="btn-copy-toolbar" id="btn-copy-guessed" type="button">Copy All</button>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <ul class="clean-list" id="list-guessed"></ul>
+              </div>
+            </div>
+
+            <!-- 8. EMAIL SECURITY -->
+            <div class="tab-panel" id="pane-security">
+              <div class="security-cards-grid">
+                <div class="security-card">
+                  <div class="security-card-head">
+                    <h4>SPF Record</h4>
+                    <span class="security-status-badge" id="sec-spf-badge">Checking</span>
+                  </div>
+                  <p class="sec-desc" id="sec-spf-desc">Sender Policy Framework specifies which mail servers are permitted to send email on behalf of your domain.</p>
+                  <pre class="sec-raw" id="sec-spf-raw">None detected</pre>
+                </div>
+                <div class="security-card">
+                  <div class="security-card-head">
+                    <h4>DMARC Policy</h4>
+                    <span class="security-status-badge" id="sec-dmarc-badge">Checking</span>
+                  </div>
+                  <p class="sec-desc" id="sec-dmarc-desc">Domain-based Message Authentication, Reporting, and Conformance prevents spoofing by specifying how unauthorized mail should be handled.</p>
+                  <pre class="sec-raw" id="sec-dmarc-raw">None detected</pre>
+                </div>
+              </div>
+              <div class="overview-card" style="margin-top: 20px;">
+                <h4>Raw Email Spoof Checks</h4>
+                <div class="data-scroll-container" style="max-height: 220px;">
+                  <ul class="clean-list" id="list-spoof-raw"></ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- 9. EMPLOYEES -->
+            <div class="tab-panel" id="pane-employees">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-employees" placeholder="Filter employees by name or email..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-employees">Showing 0 of 0</span>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <div class="employee-cards-grid" id="grid-employees"></div>
+              </div>
+            </div>
+
+            <!-- 10. CLOUD BUCKETS -->
+            <div class="tab-panel" id="pane-buckets">
+              <div class="panel-toolbar">
+                <div class="filter-shell">
+                  <span class="input-prefix">⌕</span>
+                  <input type="text" id="filter-buckets" placeholder="Filter buckets..." autocomplete="off" />
+                </div>
+                <div class="toolbar-actions">
+                  <span class="count-pill" id="counter-buckets">Showing 0 of 0</span>
+                  <button class="btn-copy-toolbar" id="btn-copy-buckets" type="button">Copy All</button>
+                </div>
+              </div>
+              <div class="data-scroll-container">
+                <ul class="clean-list" id="list-buckets"></ul>
+              </div>
+            </div>
+
+            <!-- 11. CREDENTIALS & HASHES -->
+            <div class="tab-panel" id="pane-creds">
+              <div class="overview-grid">
+                <div class="overview-card">
+                  <h4>Public Breach Credentials</h4>
+                  <div class="data-scroll-container" style="max-height: 280px;">
+                    <ul class="clean-list" id="list-creds"></ul>
+                  </div>
+                </div>
+                <div class="overview-card">
+                  <h4>Password Hashes</h4>
+                  <div class="data-scroll-container" style="max-height: 280px;">
+                    <ul class="clean-list" id="list-hashes"></ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 12. ARTIFACTS -->
+            <div class="tab-panel" id="pane-artifacts">
+              <p class="section-lead">Raw reconnaissance artifacts generated during this scan.</p>
+              <div class="artifacts-grid" id="grid-artifacts" style="margin-top: 16px;"></div>
+            </div>
+          </div>
+
+          <!-- Bottom Download & Reset Bar -->
+          <div class="report-bottom-bar">
+            <div class="report-files">
+              <div>
+                <strong>Complete Result Bundle</strong>
+                <span>All structured outputs, parsed CSVs, TXTs, maps, and metadata in one ZIP archive.</span>
+              </div>
+              <span class="file-type">ZIP</span>
+            </div>
+            <button class="button button-primary download-button" id="download-report-button" type="button">
+              <span>Download Complete Report</span>
+              <span class="download-size" id="download-size">ZIP archive</span>
+              <span class="button-arrow" aria-hidden="true">↓</span>
+            </button>
+            <p class="download-status" id="download-status" role="status"></p>
+            <button class="reset-scan" id="new-scan-button" type="button">Scan another target <span aria-hidden="true">↗</span></button>
+          </div>
+        </section>
+
+        <!-- Artifact Preview Modal -->
+        <dialog class="artifact-dialog" id="artifact-dialog">
+          <div class="dialog-shell">
+            <div class="dialog-head">
+              <div>
+                <span class="dialog-tag">ARTIFACT PREVIEW</span>
+                <h3 id="dialog-filename">filename.txt</h3>
+              </div>
+              <div class="dialog-head-actions">
+                <button class="btn-copy-toolbar" id="dialog-copy-btn" type="button">Copy Content</button>
+                <a class="btn-copy-toolbar" id="dialog-download-link" download href="#">Download File</a>
+                <button class="dialog-close" id="dialog-close-btn" type="button" aria-label="Close">×</button>
+              </div>
+            </div>
+            <div class="dialog-body">
+              <pre id="dialog-code"><code></code></pre>
+            </div>
+          </div>
+        </dialog>
+
+        <!-- Scan History Drawer / Modal -->
+        <div class="history-overlay" id="history-overlay" hidden>
+          <div class="history-drawer" id="history-drawer">
+            <div class="history-header">
+              <div class="history-title-wrap">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <circle cx="12" cy="12" r="9"/>
+                  <polyline points="12 7 12 12 15 15"/>
+                </svg>
+                <h3>Scan History</h3>
+              </div>
+              <button class="history-close-btn" id="history-close-btn" type="button" aria-label="Close history">×</button>
+            </div>
+            <div class="history-user-info" id="history-user-info">
+              <span>Showing past reconnaissance assessments</span>
+            </div>
+            <div class="history-body" id="history-list">
+              <p class="empty-state">Loading scan history...</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <footer class="scan-footer"><span>SURFACEDRIFT / EASM &amp; CTEM</span><span>Enterprise exposure monitoring. Scan only with authorization.</span></footer>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
