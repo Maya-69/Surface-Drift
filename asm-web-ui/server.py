@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 import requests
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -463,7 +463,8 @@ def run_scan(scan_id: str, target: str, mode: str = "passive", user_id: Optional
         wordlist, subwordlist = choose_wordlists()
         if not runner_script.is_file() or not wordlist or not subwordlist:
             update_job(scan_id, status="failed", stage="Missing files", error="Scanner files or wordlists could not be found.")
-            database.record_scan_completion(scan_id, "failed", 0)
+            if user_id:
+                database.record_scan_completion(scan_id, "failed", 0)
             return
 
         key_file = PROJECT_ROOT / "keylist.asm"
@@ -577,7 +578,8 @@ def run_scan(scan_id: str, target: str, mode: str = "passive", user_id: Optional
             elif recent:
                 error += " Last scanner output:\n" + recent[-1800:]
             update_job(scan_id, status="failed", progress=current_progress, stage="Scanner did not complete", logs=log_lines[-100:], error=error, duration_seconds=round(duration, 2))
-            database.record_scan_completion(scan_id, "failed", round(duration, 2))
+            if user_id:
+                database.record_scan_completion(scan_id, "failed", round(duration, 2))
             return
 
         set_stage(scan_id, 92, "Building report", "Parsing and structuring result datasets")
@@ -585,15 +587,16 @@ def run_scan(scan_id: str, target: str, mode: str = "passive", user_id: Optional
         set_stage(scan_id, 97, "Packaging download", "Generating report ZIP archive")
         zip_path = zip_results(output_root, scan_id)
 
-        # Save to SQLite History first
-        database.record_scan_completion(
-            scan_id=scan_id,
-            status="completed",
-            duration_seconds=round(duration, 2),
-            summary=report,
-            zip_name=zip_path.name,
-            zip_size_bytes=zip_path.stat().st_size
-        )
+        # Save to SQLite History if user is authenticated (Guests are ephemeral)
+        if user_id:
+            database.record_scan_completion(
+                scan_id=scan_id,
+                status="completed",
+                duration_seconds=round(duration, 2),
+                summary=report,
+                zip_name=zip_path.name,
+                zip_size_bytes=zip_path.stat().st_size
+            )
 
         update_job(
             scan_id,
@@ -612,7 +615,8 @@ def run_scan(scan_id: str, target: str, mode: str = "passive", user_id: Optional
 
     except Exception as exc:
         update_job(scan_id, status="failed", stage="Unexpected scan error", error=f"{type(exc).__name__}: {exc}")
-        database.record_scan_completion(scan_id, "failed", round(time.monotonic() - start, 2))
+        if user_id:
+            database.record_scan_completion(scan_id, "failed", round(time.monotonic() - start, 2))
 
 
 # ---------------- API Endpoints ----------------
@@ -702,14 +706,16 @@ def logout(response: Response) -> dict[str, Any]:
 
 @app.get("/api/scans/history")
 def scan_history(current_user: Optional[dict[str, Any]] = Depends(get_current_user)) -> list[dict[str, Any]]:
-    user_id = current_user["id"] if current_user else None
-    return database.get_user_scans(user_id=user_id, limit=50)
+    if not current_user:
+        return []
+    return database.get_user_scans(user_id=current_user["id"], limit=50)
 
 
 @app.delete("/api/scans/{scan_id}")
 def delete_scan_record(scan_id: str, current_user: Optional[dict[str, Any]] = Depends(get_current_user)) -> dict[str, Any]:
-    user_id = current_user["id"] if current_user else None
-    deleted = database.delete_scan(scan_id, user_id=user_id)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    deleted = database.delete_scan(scan_id, user_id=current_user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="Scan not found or unauthorized.")
     with JOBS_LOCK:
@@ -758,8 +764,9 @@ def create_scan(request: StartScanRequest, current_user: Optional[dict[str, Any]
             raise HTTPException(status_code=429, detail="The scanner is busy with another run. Try again when it finishes.")
         JOBS[scan_id] = job
 
-    # Record in SQLite history
-    database.record_scan_start(scan_id, target, request.mode, user_id)
+    # Record in SQLite history only for authenticated users (Guests are ephemeral)
+    if user_id:
+        database.record_scan_start(scan_id, target, request.mode, user_id)
 
     thread = threading.Thread(
         target=run_scan,
@@ -898,7 +905,16 @@ def get_scan_results(scan_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/scans/{scan_id}/continue-surfacedrift")
-async def continue_surfacedrift(scan_id: str, payload: ContinueSurfaceDriftRequest) -> dict[str, Any]:
+async def continue_surfacedrift(
+    scan_id: str,
+    payload: ContinueSurfaceDriftRequest,
+    current_user: Optional[dict[str, Any]] = Depends(get_current_user),
+) -> dict[str, Any]:
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required: You must sign in with Google to run Phase 2 Deep Probing assessments."
+        )
     job = find_or_reconstruct_job(scan_id)
     if job.get("status") != "completed" or not job.get("summary"):
         raise HTTPException(status_code=400, detail="Initial reconnaissance scan must be complete before running SurfaceDrift advanced assessment.")
@@ -955,7 +971,16 @@ async def continue_surfacedrift(scan_id: str, payload: ContinueSurfaceDriftReque
 
 
 @app.post("/api/scans/{scan_id}/continue-surfacedrift-stream")
-async def continue_surfacedrift_stream(scan_id: str, payload: ContinueSurfaceDriftRequest):
+async def continue_surfacedrift_stream(
+    scan_id: str,
+    payload: ContinueSurfaceDriftRequest,
+    current_user: Optional[dict[str, Any]] = Depends(get_current_user),
+):
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required: You must sign in with Google to run Phase 2 Deep Probing assessments."
+        )
     job = find_or_reconstruct_job(scan_id)
     if job.get("status") != "completed" or not job.get("summary"):
         raise HTTPException(

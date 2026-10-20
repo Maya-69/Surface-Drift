@@ -52,6 +52,69 @@
   // =========================================================================
   let currentUser = null;
 
+  function updateAuthNotice(user) {
+    const noticeEl = $('#auth-scan-notice');
+    if (!noticeEl) return;
+    if (user) {
+      noticeEl.className = 'auth-scan-notice authenticated';
+      noticeEl.innerHTML = `
+        <div class="auth-notice-icon">✓</div>
+        <div class="auth-notice-content">
+          <span class="auth-notice-badge">ACCOUNT LINKED</span>
+          <p class="auth-notice-text">
+            Signed in as <strong>${escapeHtml(user.email)}</strong>. Scan results will be saved to your dashboard history, and <strong>Phase 2 Deep Probing is unlocked</strong>.
+          </p>
+        </div>
+      `;
+    } else {
+      noticeEl.className = 'auth-scan-notice guest';
+      noticeEl.innerHTML = `
+        <div class="auth-notice-icon">⚠️</div>
+        <div class="auth-notice-content">
+          <span class="auth-notice-badge">GUEST RECON MODE</span>
+          <p class="auth-notice-text">
+            You are not logged in. Scans run as a guest are <strong>temporary (never saved to history)</strong> and restricted to <strong>Phase 1 only</strong>. Phase 2 Deep Probing is locked.
+          </p>
+        </div>
+        <button type="button" class="btn-notice-signin" id="notice-signin-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.1-1.6.4-2.3L1.9 7.3C.7 9.7 0 10.8 0 12.5s.7 2.8 1.9 5.2l3.7-2.9z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.3-6.4-5.2L1.9 17C3.7 20.7 7.5 24 12 24z"/></svg>
+          Sign in with Google
+        </button>
+      `;
+      const btn = $('#notice-signin-btn');
+      if (btn) btn.addEventListener('click', triggerGoogleLogin);
+    }
+  }
+
+  function triggerGoogleLogin() {
+    if (tokenClient) {
+      tokenClient.requestAccessToken({ prompt: 'select_account' });
+      return;
+    }
+    if (window.google && window.google.accounts && window.google.accounts.id && configuredClientId) {
+      try {
+        window.google.accounts.id.prompt();
+        return;
+      } catch {}
+    }
+    const email = prompt('Sign in with your Google email:', 'sawantmayuresh2006@gmail.com');
+    if (!email) return;
+    const name = prompt('Display Name:', 'Maya') || 'Maya';
+    fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ demo: true, email: email.trim(), name: name.trim() }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && data.user) {
+          setLoggedInUser(data.user);
+          loadScanHistory();
+        }
+      })
+      .catch((err) => alert('Authentication error: ' + err.message));
+  }
+
   async function checkAuth() {
     try {
       const res = await fetch('/api/auth/me');
@@ -82,6 +145,11 @@
     if (typeof totalScans === 'number') {
       $('#history-badge').textContent = totalScans;
     }
+    updateAuthNotice(user);
+
+    // If Phase 2 lock banner is displayed, remove it
+    const lockBanner = $('#phase2-lock-banner');
+    if (lockBanner) lockBanner.remove();
   }
 
   function setLoggedOutUser() {
@@ -91,6 +159,7 @@
     if (loginBtn) loginBtn.hidden = false;
     if (userPill) userPill.hidden = true;
     $('#user-dropdown').hidden = true;
+    updateAuthNotice(null);
   }
 
   // Google Sign-In setup
@@ -183,40 +252,7 @@
 
   const googleLoginBtn = $('#google-login-btn');
   if (googleLoginBtn) {
-    googleLoginBtn.addEventListener('click', async () => {
-      // 1. If official OAuth2 Token Client popup is available, open account picker
-      if (tokenClient) {
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-        return;
-      }
-
-      // 2. If GIS One Tap prompt is available, trigger it
-      if (window.google && window.google.accounts && window.google.accounts.id && configuredClientId) {
-        try {
-          window.google.accounts.id.prompt();
-          return;
-        } catch {}
-      }
-
-      // 3. Fallback seamless login for local development / test mode
-      const email = prompt('Sign in with your Google email:', 'sawantmayuresh2006@gmail.com');
-      if (!email) return;
-      const name = prompt('Display Name:', 'Maya') || 'Maya';
-      try {
-        const res = await fetch('/api/auth/google', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ demo: true, email: email.trim(), name: name.trim() }),
-        });
-        const data = await res.json();
-        if (data.ok && data.user) {
-          setLoggedInUser(data.user);
-          loadScanHistory();
-        }
-      } catch (err) {
-        alert('Authentication error: ' + err.message);
-      }
-    });
+    googleLoginBtn.addEventListener('click', triggerGoogleLogin);
   }
 
   const userMenuBtn = $('#user-menu-btn');
@@ -1176,6 +1212,30 @@
       }
     }
 
+    // If user is guest, show locked banner on SurfaceDrift Bridge
+    const existingLock = $('#phase2-lock-banner');
+    if (!currentUser) {
+      if (!existingLock && bridgeCard) {
+        const lockEl = document.createElement('div');
+        lockEl.id = 'phase2-lock-banner';
+        lockEl.className = 'phase2-auth-lock';
+        lockEl.innerHTML = `
+          <span class="lock-icon">🔒</span>
+          <div class="lock-content">
+            <strong>Phase 2 Deep Probing Restricted to Logged-in Users</strong>
+            <p>Phase 2 runs automated vulnerability correlation, JS secrets extraction, shadow API discovery, WAF bypass mapping, and compliance audits. Sign in with Google to unlock.</p>
+          </div>
+          <button type="button" class="btn-phase2-login" id="phase2-lock-login-btn">
+            Sign In with Google
+          </button>
+        `;
+        bridgeCard.prepend(lockEl);
+        $('#phase2-lock-login-btn')?.addEventListener('click', triggerGoogleLogin);
+      }
+    } else {
+      if (existingLock) existingLock.remove();
+    }
+
     // If job already has advanced analysis (from SQLite or disk reload)
     if (job.surfacedrift_advanced) {
       renderAdvancedResults(job.surfacedrift_advanced, job.id);
@@ -1191,6 +1251,13 @@
 
     if (launchBtn) {
       launchBtn.onclick = async () => {
+        // Enforce Authentication for Phase 2 Deep Probing
+        if (!currentUser) {
+          alert('Authentication Required:\n\nPhase 2 Deep Probing assessments require signing in with Google.\nPlease sign in to unlock deep vulnerability scanning, secrets audits, and remediation playbooks.');
+          triggerGoogleLogin();
+          return;
+        }
+
         const categories = [];
         if ($('#cat-http-probe')?.checked) categories.push('http_probe');
         if ($('#cat-takeover')?.checked) categories.push('takeover');
@@ -1236,6 +1303,12 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ categories }),
           });
+
+          if (resp.status === 401) {
+            alert('Authentication required: Please sign in with Google to run Phase 2 Deep Probing assessments.');
+            triggerGoogleLogin();
+            return;
+          }
 
           if (!resp.ok) {
             throw new Error(`Server returned HTTP ${resp.status}`);
@@ -1288,6 +1361,11 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ categories }),
             });
+            if (fallbackResp.status === 401) {
+              alert('Authentication required: Please sign in with Google to run Phase 2 Deep Probing assessments.');
+              triggerGoogleLogin();
+              return;
+            }
             if (!fallbackResp.ok) {
               const err = await fallbackResp.json().catch(() => ({}));
               throw new Error(err.detail || 'SurfaceDrift assessment failed.');
@@ -1904,12 +1982,7 @@
     }
   }
 
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const target = targetInput.value.trim();
-    const authorized = $('#authorized-check').checked;
-    if (!target) return;
-
+  async function executeScan(target, authorized, mode) {
     preflightNote.hidden = true;
     startButton.disabled = true;
     $('span:first-child', startButton).textContent = 'Launching…';
@@ -1918,7 +1991,7 @@
       const response = await fetch('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target, authorized, mode: currentMode }),
+        body: JSON.stringify({ target, authorized, mode }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || 'Could not start the scan.');
@@ -1928,11 +2001,11 @@
       scanStartedAt = Date.now();
 
       $('#running-target').textContent = result.target;
-      $('#running-mode-tag').textContent = currentMode.toUpperCase();
+      $('#running-mode-tag').textContent = mode.toUpperCase();
       $('#progress-title').textContent = 'Preparing the scan';
       $('#progress-fill').style.width = '2%';
       $('#progress-percent').textContent = '02%';
-      $('#progress-detail').textContent = `Initializing ${currentMode.toUpperCase()} reconnaissance engine…`;
+      $('#progress-detail').textContent = `Initializing ${mode.toUpperCase()} reconnaissance engine…`;
       $('#ticker-text').textContent = 'Starting process...';
       $('#elapsed-time').textContent = '00:00';
       $('#scan-error').hidden = true;
@@ -1953,6 +2026,52 @@
       startButton.disabled = false;
       $('span:first-child', startButton).textContent = 'Start Assessment';
     }
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const target = targetInput.value.trim();
+    const authorized = $('#authorized-check').checked;
+    if (!target) return;
+
+    // Check if user is unauthenticated (Guest)
+    if (!currentUser) {
+      const modal = $('#guest-confirm-modal');
+      if (modal) {
+        modal.hidden = false;
+        const proceedBtn = $('#guest-modal-proceed-btn');
+        const loginBtn = $('#guest-modal-login-btn');
+        const closeX = $('#guest-modal-close-x');
+
+        const closeModal = () => {
+          modal.hidden = true;
+          if (proceedBtn) proceedBtn.onclick = null;
+          if (loginBtn) loginBtn.onclick = null;
+          if (closeX) closeX.onclick = null;
+        };
+
+        if (closeX) {
+          closeX.onclick = closeModal;
+        }
+
+        if (proceedBtn) {
+          proceedBtn.onclick = () => {
+            closeModal();
+            executeScan(target, authorized, currentMode);
+          };
+        }
+
+        if (loginBtn) {
+          loginBtn.onclick = () => {
+            closeModal();
+            triggerGoogleLogin();
+          };
+        }
+        return;
+      }
+    }
+
+    executeScan(target, authorized, currentMode);
   });
 
   function triggerDownload() {

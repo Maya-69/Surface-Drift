@@ -183,6 +183,21 @@
               <span>I am authorised to assess this domain and its associated assets.</span>
             </label>
 
+            <!-- Auth Scan Notice (Dynamic: Guest Warning vs Authenticated Badge) -->
+            <div id="auth-scan-notice" class="auth-scan-notice guest">
+              <div class="auth-notice-icon">⚠️</div>
+              <div class="auth-notice-content">
+                <span class="auth-notice-badge">GUEST RECON MODE</span>
+                <p class="auth-notice-text">
+                  You are not logged in. Scans run as a guest are <strong>temporary (never saved to history)</strong> and restricted to <strong>Phase 1 only</strong>. Phase 2 Deep Probing is locked.
+                </p>
+              </div>
+              <button type="button" class="btn-notice-signin" id="notice-signin-btn">
+                <svg width="13" height="13" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.1-1.6.4-2.3L1.9 7.3C.7 9.7 0 10.8 0 12.5s.7 2.8 1.9 5.2l3.7-2.9z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.3-6.4-5.2L1.9 17C3.7 20.7 7.5 24 12 24z"/></svg>
+                Sign in with Google
+              </button>
+            </div>
+
             <button class="button button-primary submit-scan" id="start-scan-button" type="submit">
               <span>Start Assessment</span>
               <span class="button-arrow" aria-hidden="true">↗</span>
@@ -1093,6 +1108,47 @@
             </div>
             <div class="history-body" id="history-list">
               <p class="empty-state">Loading scan history...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guest Mode Confirmation Modal -->
+        <div class="guest-confirm-overlay" id="guest-confirm-modal" hidden>
+          <div class="guest-confirm-box">
+            <div class="guest-modal-header">
+              <span class="guest-modal-icon">⚠️</span>
+              <div class="guest-modal-title-wrap">
+                <h3>Guest Mode Notice</h3>
+                <small>Unauthenticated Session Detected</small>
+              </div>
+              <button type="button" class="history-close-btn" id="guest-modal-close-x" aria-label="Close dialog">×</button>
+            </div>
+            <div class="guest-modal-body">
+              <p class="guest-modal-intro">You are launching a reconnaissance scan without signing in:</p>
+              <div class="guest-warning-list">
+                <div class="warning-item">
+                  <span class="warning-bullet red">✕</span>
+                  <div><strong>Nothing will be saved:</strong> Scan artifacts and telemetry are temporary. They will <em>not</em> be saved to your dashboard history or database.</div>
+                </div>
+                <div class="warning-item">
+                  <span class="warning-bullet red">✕</span>
+                  <div><strong>Phase 2 Deep Probing is locked:</strong> You cannot run automated advanced modules (JS secrets, shadow API discovery, WAF bypass, TLS posture, Typosquatting, or Breach intelligence).</div>
+                </div>
+                <div class="warning-item">
+                  <span class="warning-bullet green">✓</span>
+                  <div><strong>Phase 1 only:</strong> Passive perimeter mapping will run for this active browser window only.</div>
+                </div>
+              </div>
+              <p class="guest-modal-recommendation">We recommend signing in with Google so your scans are permanently preserved in your dashboard history and all Phase 2 features are unlocked.</p>
+            </div>
+            <div class="guest-modal-footer">
+              <button type="button" class="button button-primary" id="guest-modal-login-btn">
+                <span>Sign in with Google</span>
+                <span class="button-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button type="button" class="button button-outline" id="guest-modal-proceed-btn">
+                <span>Proceed as Guest (Phase 1 Only)</span>
+              </button>
             </div>
           </div>
         </div>

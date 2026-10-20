@@ -1473,5 +1473,285 @@ body.scan-mode .header-nav{display:none}body.scan-mode .mobile-menu{display:none
   font-weight: 600;
 }
 
+/* ==========================================================================
+   Authentication & Guest Protection Banners & Modals
+   ========================================================================== */
+.auth-scan-notice {
+  margin: 18px 0 16px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  transition: all 0.25s ease;
+}
+
+.auth-scan-notice.guest {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+}
+
+.auth-scan-notice.authenticated {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.auth-notice-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.auth-scan-notice.authenticated .auth-notice-icon {
+  color: #4ade80;
+  font-weight: bold;
+}
+
+.auth-notice-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.auth-notice-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+  background: rgba(245, 158, 11, 0.22);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.auth-scan-notice.authenticated .auth-notice-badge {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.auth-notice-text {
+  margin: 0;
+  color: #d1d5db;
+  font-size: 12px;
+}
+
+.auth-notice-text strong {
+  color: #f3f4f6;
+}
+
+.btn-notice-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f9fafb;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.btn-notice-signin:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(67, 226, 210, 0.5);
+  box-shadow: 0 0 12px rgba(67, 226, 210, 0.2);
+}
+
+/* Guest Modal Overlay */
+.guest-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 9, 0.82);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: panel-fade 0.2s ease-out;
+}
+
+.guest-confirm-box {
+  width: min(520px, 94vw);
+  background: #08151c;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(245, 158, 11, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modal-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modal-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.guest-modal-header {
+  padding: 18px 22px;
+  background: rgba(245, 158, 11, 0.09);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guest-modal-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.guest-modal-title-wrap {
+  flex: 1;
+}
+
+.guest-modal-title-wrap h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.guest-modal-title-wrap small {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.guest-modal-body {
+  padding: 22px;
+  font-size: 13px;
+  color: #d1d5db;
+  line-height: 1.5;
+}
+
+.guest-modal-intro {
+  margin: 0 0 14px;
+}
+
+.guest-warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.warning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.warning-bullet {
+  font-weight: bold;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.warning-bullet.red {
+  color: #f87171;
+}
+
+.warning-bullet.green {
+  color: #4ade80;
+}
+
+.guest-modal-recommendation {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-style: italic;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.guest-modal-footer {
+  padding: 16px 22px;
+  background: rgba(3, 10, 14, 0.75);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Phase 2 Deep Probing Lock Notice */
+.phase2-auth-lock {
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.08);
+}
+
+.phase2-auth-lock .lock-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.phase2-auth-lock .lock-content {
+  flex: 1;
+}
+
+.phase2-auth-lock .lock-content strong {
+  display: block;
+  font-size: 13px;
+  color: #f87171;
+  margin-bottom: 3px;
+}
+
+.phase2-auth-lock .lock-content p {
+  margin: 0;
+  font-size: 11.5px;
+  color: #d1d5db;
+  line-height: 1.4;
+}
+
+.btn-phase2-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(67, 226, 210, 0.15);
+  border: 1px solid rgba(67, 226, 210, 0.45);
+  color: #43e2d2;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.btn-phase2-login:hover {
+  background: rgba(67, 226, 210, 0.28);
+  border-color: #43e2d2;
+  box-shadow: 0 0 14px rgba(67, 226, 210, 0.3);
+}
+
+
 
 
