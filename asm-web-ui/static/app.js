@@ -94,17 +94,75 @@
   }
 
   // Google Sign-In setup
+  let tokenClient = null;
+  let configuredClientId = '';
+
+  function initGoogleAuth(clientId) {
+    if (!clientId || !window.google || !window.google.accounts) return;
+    configuredClientId = clientId;
+
+    // 1. Initialize Google Identity Services (One Tap + Credential Callback)
+    try {
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+      window.google.accounts.id.prompt();
+    } catch (e) {
+      console.warn('GIS ID init notice:', e);
+    }
+
+    // 2. Initialize OAuth2 Token Client (Explicit Popup on Click)
+    try {
+      if (window.google.accounts.oauth2) {
+        tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'email profile openid',
+          callback: async (resp) => {
+            if (resp && resp.access_token) {
+              await verifyAndLoginWithToken(resp.access_token);
+            }
+          },
+        });
+      }
+    } catch (e) {
+      console.warn('GIS OAuth2 token client init notice:', e);
+    }
+  }
+
   fetch('/api/auth/config')
     .then((r) => r.json())
     .then((cfg) => {
-      if (cfg.google_client_id && window.google && window.google.accounts) {
-        window.google.accounts.id.initialize({
-          client_id: cfg.google_client_id,
-          callback: handleGoogleCredentialResponse,
-        });
+      if (cfg.google_client_id) {
+        if (window.google && window.google.accounts) {
+          initGoogleAuth(cfg.google_client_id);
+        } else {
+          window.addEventListener('load', () => {
+            initGoogleAuth(cfg.google_client_id);
+          });
+        }
       }
     })
     .catch(() => {});
+
+  async function verifyAndLoginWithToken(token) {
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: token }),
+      });
+      const data = await res.json();
+      if (data.ok && data.user) {
+        setLoggedInUser(data.user);
+        loadScanHistory();
+      }
+    } catch {
+      alert('Could not authenticate with Google.');
+    }
+  }
 
   async function handleGoogleCredentialResponse(response) {
     try {
@@ -126,14 +184,21 @@
   const googleLoginBtn = $('#google-login-btn');
   if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', async () => {
-      // If official GIS is loaded with client ID, open prompt
-      if (window.google && window.google.accounts && window.google.accounts.id.prompt) {
+      // 1. If official OAuth2 Token Client popup is available, open account picker
+      if (tokenClient) {
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      }
+
+      // 2. If GIS One Tap prompt is available, trigger it
+      if (window.google && window.google.accounts && window.google.accounts.id && configuredClientId) {
         try {
           window.google.accounts.id.prompt();
           return;
         } catch {}
       }
-      // Instant Seamless Sign-In for demo and local execution
+
+      // 3. Fallback seamless login for local development / test mode
       const email = prompt('Sign in with your Google email:', 'sawantmayuresh2006@gmail.com');
       if (!email) return;
       const name = prompt('Display Name:', 'Maya') || 'Maya';

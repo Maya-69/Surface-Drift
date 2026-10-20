@@ -6,13 +6,24 @@ Handles user authentication records and scan history using SQLite.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-DB_PATH = Path(__file__).resolve().parent / "data" / "asm_history.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+db_env = os.getenv("DATABASE_PATH")
+if db_env:
+    DB_PATH = Path(db_env)
+elif os.getenv("VERCEL"):
+    DB_PATH = Path("/tmp/asm_history.db")
+else:
+    DB_PATH = Path(__file__).resolve().parent / "data" / "asm_history.db"
+
+try:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 
 def get_connection() -> sqlite3.Connection:

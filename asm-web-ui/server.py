@@ -38,12 +38,23 @@ else:
     PROJECT_ROOT = APP_DIR.parent.resolve()
 
 STATIC_DIR = APP_DIR / "static"
-ARTIFACTS_DIR = Path(os.getenv("ASM_ARTIFACTS_DIR", str(APP_DIR / "artifacts"))).resolve()
-ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-RUNS_DIR = Path(os.getenv("ASM_RUNS_DIR", str(PROJECT_ROOT / "demo_run"))).resolve()
-RUNS_DIR.mkdir(parents=True, exist_ok=True)
+_default_artifacts = "/tmp/artifacts" if os.getenv("VERCEL") else str(APP_DIR / "artifacts")
+ARTIFACTS_DIR = Path(os.getenv("ASM_ARTIFACTS_DIR", _default_artifacts)).resolve()
+try:
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
+_default_runs = "/tmp/demo_run" if os.getenv("VERCEL") else str(PROJECT_ROOT / "demo_run")
+RUNS_DIR = Path(os.getenv("ASM_RUNS_DIR", _default_runs)).resolve()
+try:
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
 MAX_CONCURRENT_SCANS = max(1, int(os.getenv("ASM_MAX_CONCURRENT_SCANS", "1")))
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
 app = FastAPI(
     title="SurfaceDrift",
@@ -616,10 +627,15 @@ def auth_config() -> dict[str, Any]:
 
 @app.post("/api/auth/google")
 def google_auth(payload: GoogleAuthRequest, response: Response) -> dict[str, Any]:
-    # 1. Real Google credential verification (if token supplied)
+    # 1. Real Google credential verification (ID token or Access token)
     if payload.credential:
+        # A. Try ID token verification
         try:
-            resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.credential}", timeout=5)
+            resp = requests.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": payload.credential},
+                timeout=5
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 email = data.get("email")
@@ -632,13 +648,37 @@ def google_auth(payload: GoogleAuthRequest, response: Response) -> dict[str, Any
         except Exception:
             pass
 
-    # 2. Demo Google Auth (instant seamless test mode)
+        # B. Try OAuth2 Access Token verification
+        try:
+            resp = requests.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {payload.credential}"},
+                timeout=5
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                email = data.get("email")
+                name = data.get("name", email.split("@")[0] if email else "User")
+                picture = data.get("picture", "")
+                google_id = data.get("sub", "")
+                user = database.get_or_create_user(email=email, name=name, picture=picture, google_id=google_id)
+                response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax")
+                return {"ok": True, "user": user}
+        except Exception:
+            pass
+
+    # 2. Demo Google Auth (instant seamless test mode when offline or testing)
     demo_email = (payload.email or "sawantmayuresh2006@gmail.com").strip().lower()
     demo_name = (payload.name or "Maya").strip()
     demo_picture = payload.picture or "https://api.dicebear.com/7.x/identicon/svg?seed=Maya"
     user = database.get_or_create_user(email=demo_email, name=demo_name, picture=demo_picture, google_id="demo_user")
     response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax")
     return {"ok": True, "user": user}
+
+
+@app.get("/api/auth/google/callback")
+def google_callback(code: Optional[str] = None):
+    return RedirectResponse(url="/")
 
 
 @app.get("/api/auth/me")
