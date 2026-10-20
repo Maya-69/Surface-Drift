@@ -309,78 +309,222 @@
     return String(str || '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
 
+  const LOCAL_STORAGE_KEY = 'surfacedrift_scan_history';
+
+  function getLocalHistory() {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveScanToLocalHistory(job) {
+    if (!job || !job.id) return;
+    try {
+      const history = getLocalHistory();
+      const existingIdx = history.findIndex((h) => h.id === job.id);
+      const counts = (job.summary && job.summary.counts) || {};
+      const item = {
+        id: job.id,
+        target: job.target,
+        mode: job.mode || 'passive',
+        status: job.status || 'completed',
+        started_at: job.created_at || new Date().toISOString(),
+        completed_at: job.completed_at || new Date().toISOString(),
+        duration_seconds: job.duration_seconds || 0,
+        subdomains_count: counts.subdomains || 0,
+        ips_count: counts.ips || 0,
+        ports_count: counts.ports || 0,
+        emails_count: counts.emails || 0,
+        buckets_count: counts.buckets || 0,
+        grade: job.surfacedrift_advanced?.posture?.grade || job.grade || null,
+        risk_score: job.surfacedrift_advanced?.posture?.score ?? job.risk_score ?? null,
+        summary: job.summary,
+        surfacedrift_advanced: job.surfacedrift_advanced || null,
+      };
+      if (existingIdx >= 0) {
+        history[existingIdx] = { ...history[existingIdx], ...item };
+      } else {
+        history.unshift(item);
+      }
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(history.slice(0, 50)));
+      const badge = $('#history-badge');
+      if (badge) badge.textContent = history.length;
+    } catch (e) {
+      console.warn('Could not save scan to local storage:', e);
+    }
+  }
+
+  async function downloadScanArchive(item) {
+    const scanId = item.id;
+    const target = item.target || 'target';
+
+    try {
+      const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}/download`);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${target}-asm-report-${scanId}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
+    } catch {}
+
+    if (item.summary) {
+      try {
+        const postResp = await fetch('/api/scans/export-zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scan_id: scanId,
+            target: target,
+            summary: item.summary,
+            advanced: item.surfacedrift_advanced || null,
+          }),
+        });
+        if (postResp.ok) {
+          const blob = await postResp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${target}-asm-report-${scanId}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          return;
+        }
+      } catch (e) {
+        console.error('Export zip failed:', e);
+      }
+    }
+
+    alert('Download failed. Assessment report data could not be retrieved.');
+  }
+
   async function loadScanHistory() {
     const listEl = $('#history-list');
     if (!listEl) return;
     listEl.innerHTML = '<p class="empty-state">Loading scan history…</p>';
+
+    let serverData = [];
     try {
       const res = await fetch('/api/scans/history');
-      const historyData = await res.json();
-      const badge = $('#history-badge');
-      if (badge) badge.textContent = historyData.length;
+      if (res.ok) {
+        serverData = await res.json();
+      }
+    } catch {}
 
-      if (!historyData.length) {
-        listEl.innerHTML = '<p class="empty-state"><span>◇</span>No scans recorded yet.<br />Run an assessment to build your history.</p>';
-        return;
+    const localData = getLocalHistory();
+    const map = new Map();
+    serverData.forEach((s) => map.set(s.id, s));
+    localData.forEach((l) => {
+      if (!map.has(l.id)) {
+        map.set(l.id, l);
+      } else {
+        const s = map.get(l.id);
+        map.set(l.id, {
+          ...s,
+          summary: l.summary || s.summary,
+          surfacedrift_advanced: l.surfacedrift_advanced || s.surfacedrift_advanced,
+        });
+      }
+    });
+
+    const combinedList = Array.from(map.values()).sort((a, b) => {
+      const ta = new Date(a.started_at || 0).getTime();
+      const tb = new Date(b.started_at || 0).getTime();
+      return tb - ta;
+    });
+
+    const badge = $('#history-badge');
+    if (badge) badge.textContent = combinedList.length;
+
+    if (!combinedList.length) {
+      listEl.innerHTML = '<p class="empty-state"><span>◇</span>No scans recorded yet.<br />Run an assessment to build your history.</p>';
+      return;
+    }
+
+    listEl.replaceChildren();
+    combinedList.forEach((item) => {
+      const card = document.createElement('div');
+      card.className = 'history-card';
+      const dateStr = item.started_at ? new Date(item.started_at).toLocaleString() : 'Recent';
+      const durStr = item.duration_seconds ? `${Number(item.duration_seconds).toFixed(1)}s` : '—';
+      const modeBadge = item.mode === 'active'
+        ? '<span class="mode-badge active">Active</span>'
+        : '<span class="mode-badge passive">Passive</span>';
+      const statusClass = item.status === 'completed' ? 'completed' : (item.status === 'failed' ? 'failed' : 'running');
+      const gradeBadge = item.grade
+        ? `<span class="badge-status" style="background:rgba(67,226,210,0.15);color:#43e2d2;border:1px solid rgba(67,226,210,0.3);">Grade ${escapeHtml(item.grade)} (${item.risk_score || 0})</span>`
+        : '';
+
+      card.innerHTML = `
+        <div class="history-card-top">
+          <span class="history-target">${escapeHtml(item.target)}</span>
+          <div class="history-badges">
+            ${gradeBadge}
+            ${modeBadge}
+            <span class="badge-status ${statusClass}">${escapeHtml(item.status)}</span>
+          </div>
+        </div>
+        <div class="history-meta">
+          <span>${escapeHtml(dateStr)} · Duration: ${durStr}</span>
+        </div>
+        <div class="history-metrics-row">
+          <span class="history-metric-pill">Subdomains: <strong>${item.subdomains_count || 0}</strong></span>
+          <span class="history-metric-pill">IPs: <strong>${item.ips_count || 0}</strong></span>
+          <span class="history-metric-pill">Ports: <strong>${item.ports_count || 0}</strong></span>
+          <span class="history-metric-pill">Emails: <strong>${item.emails_count || 0}</strong></span>
+          <span class="history-metric-pill">Buckets: <strong>${item.buckets_count || 0}</strong></span>
+        </div>
+        <div class="history-actions">
+          <button class="btn-history-action btn-view-results" data-id="${item.id}" type="button">View Results ↗</button>
+          ${item.status === 'completed' ? `<button class="btn-history-action btn-history-download" data-id="${item.id}" type="button">Download ZIP ↓</button>` : ''}
+          <button class="btn-history-action btn-delete-scan" data-id="${item.id}" type="button">Delete</button>
+        </div>
+      `;
+
+      card.querySelector('.btn-view-results').onclick = () => {
+        closeHistory();
+        if (item.summary) {
+          activeScanId = item.id;
+          lastJob = item;
+          history.pushState(null, '', `/scan?scan_id=${encodeURIComponent(item.id)}`);
+          buildReport(item);
+          if (item.surfacedrift_advanced) {
+            renderAdvancedResults(item.surfacedrift_advanced, item.id);
+          }
+        } else {
+          loadExistingScan(item.id);
+        }
+      };
+
+      const dlBtn = card.querySelector('.btn-history-download');
+      if (dlBtn) {
+        dlBtn.onclick = () => downloadScanArchive(item);
       }
 
-      listEl.replaceChildren();
-      historyData.forEach((item) => {
-        const card = document.createElement('div');
-        card.className = 'history-card';
-        const dateStr = item.started_at ? new Date(item.started_at).toLocaleString() : 'Recent';
-        const durStr = item.duration_seconds ? `${Number(item.duration_seconds).toFixed(1)}s` : '—';
-        const modeBadge = item.mode === 'active'
-          ? '<span class="mode-badge active">Active</span>'
-          : '<span class="mode-badge passive">Passive</span>';
-        const statusClass = item.status === 'completed' ? 'completed' : (item.status === 'failed' ? 'failed' : 'running');
-        const gradeBadge = item.grade
-          ? `<span class="badge-status" style="background:rgba(67,226,210,0.15);color:#43e2d2;border:1px solid rgba(67,226,210,0.3);">Grade ${escapeHtml(item.grade)} (${item.risk_score || 0})</span>`
-          : '';
-
-        card.innerHTML = `
-          <div class="history-card-top">
-            <span class="history-target">${escapeHtml(item.target)}</span>
-            <div class="history-badges">
-              ${gradeBadge}
-              ${modeBadge}
-              <span class="badge-status ${statusClass}">${escapeHtml(item.status)}</span>
-            </div>
-          </div>
-          <div class="history-meta">
-            <span>${escapeHtml(dateStr)} · Duration: ${durStr}</span>
-          </div>
-          <div class="history-metrics-row">
-            <span class="history-metric-pill">Subdomains: <strong>${item.subdomains_count || 0}</strong></span>
-            <span class="history-metric-pill">IPs: <strong>${item.ips_count || 0}</strong></span>
-            <span class="history-metric-pill">Ports: <strong>${item.ports_count || 0}</strong></span>
-            <span class="history-metric-pill">Emails: <strong>${item.emails_count || 0}</strong></span>
-            <span class="history-metric-pill">Buckets: <strong>${item.buckets_count || 0}</strong></span>
-          </div>
-          <div class="history-actions">
-            <button class="btn-history-action btn-view-results" data-id="${item.id}" type="button">View Results ↗</button>
-            ${item.status === 'completed' ? `<a class="btn-history-action" href="/api/scans/${item.id}/download">Download ZIP ↓</a>` : ''}
-            <button class="btn-history-action btn-delete-scan" data-id="${item.id}" type="button">Delete</button>
-          </div>
-        `;
-
-        card.querySelector('.btn-view-results').onclick = () => {
-          closeHistory();
-          loadExistingScan(item.id);
-        };
-
-        card.querySelector('.btn-delete-scan').onclick = async () => {
-          if (confirm(`Delete scan record for ${item.target}?`)) {
+      card.querySelector('.btn-delete-scan').onclick = async () => {
+        if (confirm(`Delete scan record for ${item.target}?`)) {
+          const updated = getLocalHistory().filter((h) => h.id !== item.id);
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+          try {
             await fetch(`/api/scans/${item.id}`, { method: 'DELETE' });
-            loadScanHistory();
-          }
-        };
+          } catch {}
+          loadScanHistory();
+        }
+      };
 
-        listEl.appendChild(card);
-      });
-    } catch {
-      listEl.innerHTML = '<p class="empty-state" style="color:#eaa58c">Could not load scan history.</p>';
-    }
+      listEl.appendChild(card);
+    });
   }
 
   // Initialize auth check
@@ -984,6 +1128,7 @@
 
   // Build Complete Report
   function buildReport(job) {
+    saveScanToLocalHistory(job);
     const scanWrap = $('.scan-wrap');
     if (scanWrap) scanWrap.classList.add('results-mode');
 
@@ -1386,6 +1531,10 @@
   }
 
   function renderAdvancedResults(adv, scanId) {
+    if (lastJob) {
+      lastJob.surfacedrift_advanced = adv;
+      saveScanToLocalHistory(lastJob);
+    }
     const resultsView = $('#advanced-results-view');
     if (!resultsView) return;
     resultsView.hidden = false;
@@ -1937,8 +2086,15 @@
     // 4. Combined Download All Link
     const combinedBtn = $('#btn-download-combined-all');
     if (combinedBtn) {
-      combinedBtn.href = `/api/scans/${encodeURIComponent(scanId)}/download-combined`;
-      combinedBtn.setAttribute('download', `surfacedrift-complete-${scanId}.zip`);
+      combinedBtn.onclick = async (e) => {
+        e.preventDefault();
+        await downloadScanArchive({
+          id: scanId,
+          target: lastJob?.target || 'target',
+          summary: lastJob?.summary,
+          surfacedrift_advanced: adv,
+        });
+      };
     }
   }
 
@@ -2074,13 +2230,19 @@
     executeScan(target, authorized, currentMode);
   });
 
-  function triggerDownload() {
+  async function triggerDownload() {
     if (!activeScanId || !lastJob || lastJob.status !== 'completed') return;
-    $('#download-status').textContent = 'Your download is starting…';
-    window.location.assign(`/api/scans/${encodeURIComponent(activeScanId)}/download`);
-    window.setTimeout(() => {
-      $('#download-status').textContent = 'Report download requested.';
-    }, 900);
+    const downloadStatus = $('#download-status');
+    if (downloadStatus) downloadStatus.textContent = 'Preparing your report archive…';
+
+    await downloadScanArchive({
+      id: activeScanId,
+      target: lastJob.target,
+      summary: lastJob.summary,
+      surfacedrift_advanced: lastJob.surfacedrift_advanced,
+    });
+
+    if (downloadStatus) downloadStatus.textContent = 'Report downloaded.';
   }
 
   $('#download-report-button').addEventListener('click', triggerDownload);

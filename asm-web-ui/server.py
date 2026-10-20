@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import io
 import ipaddress
 import json
 import os
@@ -107,6 +108,13 @@ class GoogleAuthRequest(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     picture: Optional[str] = None
+
+
+class ExportZipRequest(BaseModel):
+    scan_id: str
+    target: str
+    summary: dict[str, Any]
+    advanced: Optional[dict[str, Any]] = None
 
 
 def utc_now() -> str:
@@ -408,6 +416,65 @@ def zip_results(output_root: Path, scan_id: str) -> Path:
     return zip_path
 
 
+def build_zip_bytes_from_summary(
+    target: str,
+    scan_id: str,
+    summary: dict[str, Any],
+    advanced: Optional[dict[str, Any]] = None
+) -> bytes:
+    bio = io.BytesIO()
+    folder = f"asm-report-{target}"
+    with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(f"{folder}/ASM_Scan_Summary.json", json.dumps(summary, indent=2))
+
+        sections = summary.get("sections", {})
+        subdomains = sections.get("subdomains", [])
+        if subdomains:
+            archive.writestr(f"{folder}/subdomains.txt", "\n".join(subdomains) + "\n")
+
+        dns_records = sections.get("dns_records", [])
+        if dns_records:
+            archive.writestr(f"{folder}/dns_records.txt", "\n".join(dns_records) + "\n")
+
+        email_sec = sections.get("email_security", {})
+        spoof_lines = email_sec.get("raw_lines", [])
+        if spoof_lines:
+            archive.writestr(f"{folder}/email_spoof_checks.txt", "\n".join(spoof_lines) + "\n")
+        else:
+            spf = email_sec.get("spf", "Not detected")
+            dmarc = email_sec.get("dmarc", "Not detected")
+            archive.writestr(f"{folder}/email_spoof_checks.txt", f"SPF: {spf}\nDMARC: {dmarc}\n")
+
+        ip_records = sections.get("ip_records", [])
+        if ip_records:
+            sio = io.StringIO()
+            writer = csv.DictWriter(sio, fieldnames=["IP Address", "Port/Protocol", "ASN", "ASN Description", "Vulnerabilities", "Location"])
+            writer.writeheader()
+            for r in ip_records:
+                writer.writerow({
+                    "IP Address": r.get("ip", ""),
+                    "Port/Protocol": r.get("ports_raw", ", ".join(r.get("ports", []))),
+                    "ASN": r.get("asn", ""),
+                    "ASN Description": r.get("asn_description", ""),
+                    "Vulnerabilities": r.get("vulnerabilities_raw", ", ".join(r.get("vulnerabilities", []))),
+                    "Location": r.get("location", ""),
+                })
+            archive.writestr(f"{folder}/target_ips.csv", sio.getvalue())
+
+        if advanced:
+            archive.writestr(f"{folder}/surfacedrift_advanced_report.json", json.dumps(advanced, indent=2))
+            remediation = advanced.get("remediation", [])
+            if remediation:
+                rem_text = "\n\n".join(
+                    f"[{item.get('severity', 'INFO')}] {item.get('title')}\nPlaybook: {item.get('playbook')}\nCommand / Fix:\n{item.get('code')}"
+                    for item in remediation
+                )
+                archive.writestr(f"{folder}/remediation_playbooks.txt", rem_text + "\n")
+
+    bio.seek(0)
+    return bio.getvalue()
+
+
 def update_job(scan_id: str, **changes: Any) -> None:
     with JOBS_LOCK:
         if scan_id in JOBS:
@@ -619,16 +686,15 @@ async def execute_native_recon(
     emit("[-] Packaging download: Generating report ZIP archive...", 97, "Packaging download")
     zip_path = zip_results(output_root, scan_id)
 
-    # Save to SQLite history if authenticated
-    if user_id:
-        database.record_scan_completion(
-            scan_id=scan_id,
-            status="completed",
-            duration_seconds=round(duration, 2),
-            summary=report,
-            zip_name=zip_path.name,
-            zip_size_bytes=zip_path.stat().st_size,
-        )
+    # Save to SQLite history
+    database.record_scan_completion(
+        scan_id=scan_id,
+        status="completed",
+        duration_seconds=round(duration, 2),
+        summary=report,
+        zip_name=zip_path.name,
+        zip_size_bytes=zip_path.stat().st_size,
+    )
 
     emit("[+] Scan complete: Your surface mapping report is ready.", 100, "Scan complete")
     update_job(
@@ -787,15 +853,14 @@ def run_scan(scan_id: str, target: str, mode: str = "passive", user_id: Optional
         set_stage(scan_id, 97, "Packaging download", "Generating report ZIP archive")
         zip_path = zip_results(output_root, scan_id)
 
-        if user_id:
-            database.record_scan_completion(
-                scan_id=scan_id,
-                status="completed",
-                duration_seconds=round(duration, 2),
-                summary=report,
-                zip_name=zip_path.name,
-                zip_size_bytes=zip_path.stat().st_size
-            )
+        database.record_scan_completion(
+            scan_id=scan_id,
+            status="completed",
+            duration_seconds=round(duration, 2),
+            summary=report,
+            zip_name=zip_path.name,
+            zip_size_bytes=zip_path.stat().st_size
+        )
 
         update_job(
             scan_id,
@@ -908,16 +973,14 @@ def logout(response: Response) -> dict[str, Any]:
 
 @app.get("/api/scans/history")
 def scan_history(current_user: Optional[dict[str, Any]] = Depends(get_current_user)) -> list[dict[str, Any]]:
-    if not current_user:
-        return []
-    return database.get_user_scans(user_id=current_user["id"], limit=50)
+    user_id = current_user["id"] if current_user else None
+    return database.get_user_scans(user_id=user_id, limit=50)
 
 
 @app.delete("/api/scans/{scan_id}")
 def delete_scan_record(scan_id: str, current_user: Optional[dict[str, Any]] = Depends(get_current_user)) -> dict[str, Any]:
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    deleted = database.delete_scan(scan_id, user_id=current_user["id"])
+    user_id = current_user["id"] if current_user else None
+    deleted = database.delete_scan(scan_id, user_id=user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Scan not found or unauthorized.")
     with JOBS_LOCK:
@@ -966,9 +1029,8 @@ def create_scan(request: StartScanRequest, current_user: Optional[dict[str, Any]
             raise HTTPException(status_code=429, detail="The scanner is busy with another run. Try again when it finishes.")
         JOBS[scan_id] = job
 
-    # Record in SQLite history only for authenticated users (Guests are ephemeral)
-    if user_id:
-        database.record_scan_start(scan_id, target, request.mode, user_id)
+    # Record in SQLite history
+    database.record_scan_start(scan_id, target, request.mode, user_id)
 
     thread = threading.Thread(
         target=run_scan,
@@ -1258,24 +1320,48 @@ async def continue_surfacedrift_stream(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.get("/api/scans/{scan_id}/download-combined")
-def download_combined_scan(scan_id: str) -> FileResponse:
-    job = find_or_reconstruct_job(scan_id)
-    zip_name = job.get("combined_zip_name") or f"surfacedrift-complete-{scan_id}.zip"
-    path = (ARTIFACTS_DIR / zip_name).resolve()
-    if not path.is_file() or ARTIFACTS_DIR not in path.parents:
-        # Fallback to single report ZIP if combined was not created
-        single_zip = job.get("zip_name")
-        if single_zip and (ARTIFACTS_DIR / single_zip).is_file():
-            path = (ARTIFACTS_DIR / single_zip).resolve()
-        else:
-            raise HTTPException(status_code=404, detail="Combined assessment report archive not found.")
-
-    return FileResponse(
-        path,
-        media_type="application/zip",
-        filename=f"{job['target']}-surfacedrift-full-assessment-{scan_id}.zip"
+@app.post("/api/scans/export-zip")
+def export_zip(payload: ExportZipRequest) -> Response:
+    zip_bytes = build_zip_bytes_from_summary(
+        target=payload.target,
+        scan_id=payload.scan_id,
+        summary=payload.summary,
+        advanced=payload.advanced
     )
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{payload.target}-asm-report-{payload.scan_id}.zip"'}
+    )
+
+
+@app.get("/api/scans/{scan_id}/download-combined")
+def download_combined_scan(scan_id: str):
+    job = None
+    try:
+        job = find_or_reconstruct_job(scan_id)
+    except HTTPException:
+        pass
+
+    if job and job.get("combined_zip_name"):
+        path = (ARTIFACTS_DIR / job["combined_zip_name"]).resolve()
+        if path.is_file() and ARTIFACTS_DIR in path.parents:
+            return FileResponse(path, media_type="application/zip", filename=f"{job.get('target', 'target')}-surfacedrift-full-assessment-{scan_id}.zip")
+
+    if job and job.get("summary"):
+        zip_bytes = build_zip_bytes_from_summary(
+            target=job.get("target", "target"),
+            scan_id=scan_id,
+            summary=job["summary"],
+            advanced=job.get("surfacedrift_advanced")
+        )
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{job.get("target", "target")}-surfacedrift-full-assessment-{scan_id}.zip"'}
+        )
+
+    raise HTTPException(status_code=404, detail="Combined assessment report archive not found.")
 
 
 
@@ -1306,14 +1392,32 @@ def get_scan_artifact(scan_id: str, artifact_path: str) -> FileResponse:
 
 
 @app.get("/api/scans/{scan_id}/download")
-def download_scan(scan_id: str) -> FileResponse:
-    job = find_or_reconstruct_job(scan_id)
-    if job.get("status") != "completed" or not job.get("zip_name"):
-        raise HTTPException(status_code=409, detail="The report is not ready yet.")
-    path = (ARTIFACTS_DIR / job["zip_name"]).resolve()
-    if not path.is_file() or ARTIFACTS_DIR not in path.parents:
-        raise HTTPException(status_code=404, detail="The report archive could not be found.")
-    return FileResponse(path, media_type="application/zip", filename=f"{job['target']}-asm-report-{scan_id}.zip")
+def download_scan(scan_id: str):
+    job = None
+    try:
+        job = find_or_reconstruct_job(scan_id)
+    except HTTPException:
+        pass
+
+    if job and job.get("zip_name"):
+        path = (ARTIFACTS_DIR / job["zip_name"]).resolve()
+        if path.is_file() and ARTIFACTS_DIR in path.parents:
+            return FileResponse(path, media_type="application/zip", filename=f"{job.get('target', 'target')}-asm-report-{scan_id}.zip")
+
+    if job and job.get("summary"):
+        zip_bytes = build_zip_bytes_from_summary(
+            target=job.get("target", "target"),
+            scan_id=scan_id,
+            summary=job["summary"],
+            advanced=job.get("surfacedrift_advanced")
+        )
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{job.get("target", "target")}-asm-report-{scan_id}.zip"'}
+        )
+
+    raise HTTPException(status_code=404, detail="The report archive could not be found.")
 
 
 @app.get("/")
