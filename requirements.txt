@@ -14,3 +14,7 @@ pyopenssl>=18.0.0
 tld>=0.9.3
 trans>=2.1.0
 validator_collection
+pymongo>=4.0.0
+selenium>=4.0.0
+shodan>=1.30.0
+censys>=2.2.0

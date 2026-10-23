@@ -1276,6 +1276,13 @@
     // Setup SurfaceDrift Continuous Exposure Bridge
     setupSurfaceDriftBridge(job);
 
+    // Initialize Surface Drift & Attack Graph on initial scan completion
+    renderSurfaceDriftDelta(job.id, job);
+    renderAttackPathGraph(job.surfacedrift_advanced?.attack_graph, job);
+    if (job.surfacedrift_advanced?.mitre_attack) {
+      renderMitreAttack(job.surfacedrift_advanced.mitre_attack, job.surfacedrift_advanced.findings);
+    }
+
     setupTabs();
     showView('report');
   }
@@ -2083,6 +2090,15 @@
       }
     }
 
+    // 14. MITRE ATT&CK Matrix Alignment
+    renderMitreAttack(adv.mitre_attack, findings);
+
+    // 15. Surface Drift Time-Series Delta
+    renderSurfaceDriftDelta(scanId, lastJob);
+
+    // 16. Graph-Based Attack Path Chaining
+    renderAttackPathGraph(adv.attack_graph, lastJob);
+
     // 4. Combined Download All Link
     const combinedBtn = $('#btn-download-combined-all');
     if (combinedBtn) {
@@ -2093,6 +2109,497 @@
           target: lastJob?.target || 'target',
           summary: lastJob?.summary,
           surfacedrift_advanced: adv,
+        });
+      };
+    }
+  }
+
+  // =========================================================================
+  // MITRE ATT&CK, Surface Drift & Attack Path Graph Visualization
+  // =========================================================================
+  function renderMitreAttack(mitreData, fallbackFindings) {
+    if (!mitreData) {
+      if (lastJob?.id) {
+        fetch(`/api/scans/${encodeURIComponent(lastJob.id)}/mitre`)
+          .then(res => res.ok ? res.json() : null)
+          .then(data => { if (data) renderMitreAttack(data); })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    const grid = $('#mitre-matrix-grid');
+    if (!grid) return;
+    grid.replaceChildren();
+
+    const tactics = mitreData.tactics || {};
+    const summary = mitreData.summary || {};
+
+    const tacticsTag = $('#mitre-tactics-tag');
+    if (tacticsTag) {
+      tacticsTag.textContent = `${summary.total_tactics_monitored || Object.keys(tactics).length} Tactics Monitored`;
+    }
+    const activeTag = $('#mitre-active-tag');
+    if (activeTag) {
+      const activeCount = summary.techniques_with_findings || 0;
+      activeTag.textContent = `${activeCount} Threat${activeCount === 1 ? '' : 's'} Triggered`;
+      activeTag.style.background = activeCount > 0 ? 'rgba(239,68,68,0.22)' : 'rgba(74,222,128,0.15)';
+      activeTag.style.color = activeCount > 0 ? '#f87171' : '#4ade80';
+    }
+
+    const badgeMitre = $('#badge-mitre');
+    if (badgeMitre) {
+      badgeMitre.textContent = summary.techniques_with_findings ? `${summary.techniques_with_findings} active` : 'Matrix';
+    }
+    const quickBadge = $('#quick-badge-mitre');
+    if (quickBadge) {
+      quickBadge.textContent = summary.techniques_with_findings ? `${summary.techniques_with_findings} active` : 'Matrix';
+    }
+
+    Object.entries(tactics).forEach(([tacId, tac]) => {
+      const col = document.createElement('div');
+      col.className = 'mitre-tactic-col';
+      
+      const head = document.createElement('div');
+      head.className = `mitre-tactic-head ${tac.has_critical ? 'critical-active' : ''}`;
+      head.innerHTML = `
+        <span class="mitre-tactic-id">${escapeHtml(tacId)}</span>
+        <span class="mitre-tactic-name">${escapeHtml(tac.name)}</span>
+      `;
+      col.appendChild(head);
+
+      const list = document.createElement('div');
+      list.className = 'mitre-techniques-list';
+
+      (tac.techniques || []).forEach((t) => {
+        const card = document.createElement('a');
+        card.className = `mitre-technique-pill ${t.has_findings ? 'threat-active' : ''}`;
+        card.href = t.mitre_url || `https://attack.mitre.org/techniques/${t.technique_id}/`;
+        card.target = '_blank';
+        card.rel = 'noopener noreferrer';
+        card.title = `${t.description || ''} (Click to view official MITRE ATT&CK reference)`;
+
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="mitre-tech-id">${escapeHtml(t.subtechnique_id || t.technique_id)}</span>
+            <span class="mitre-tech-status ${t.has_findings ? 'active' : 'clean'}">
+              ${t.has_findings ? `${t.findings_count} ALERT` : 'AUDITED'}
+            </span>
+          </div>
+          <span class="mitre-tech-name">${escapeHtml(t.subtechnique_name || t.technique_name)}</span>
+        `;
+        list.appendChild(card);
+      });
+
+      col.appendChild(list);
+      grid.appendChild(col);
+    });
+  }
+
+  async function renderSurfaceDriftDelta(scanId, job) {
+    if (!scanId) return;
+
+    const refreshBtn = $('#btn-refresh-drift');
+    if (refreshBtn) {
+      refreshBtn.onclick = () => renderSurfaceDriftDelta(scanId, job);
+    }
+
+    try {
+      const res = await fetch(`/api/scans/${encodeURIComponent(scanId)}/drift`);
+      if (!res.ok) throw new Error('Drift endpoint response failed');
+      const data = await res.json();
+      const drift = data.drift || {};
+
+      const statusBadge = $('#drift-status-badge');
+      if (statusBadge) {
+        if (!data.has_prior) {
+          statusBadge.textContent = 'Baseline Scan Recorded';
+          statusBadge.className = 'drift-badge';
+        } else if (drift.has_critical_drift) {
+          statusBadge.textContent = 'Critical Posture Drift';
+          statusBadge.className = 'drift-badge critical';
+        } else if (drift.has_drift) {
+          statusBadge.textContent = 'Surface Drift Detected';
+          statusBadge.className = 'drift-badge';
+          statusBadge.style.color = '#facc15';
+          statusBadge.style.borderColor = 'rgba(234,179,8,0.4)';
+        } else {
+          statusBadge.textContent = 'No Exposure Drift';
+          statusBadge.className = 'drift-badge';
+          statusBadge.style.color = '#4ade80';
+          statusBadge.style.borderColor = 'rgba(74,222,128,0.4)';
+        }
+      }
+
+      const scoreDeltaEl = $('#drift-score-delta');
+      if (scoreDeltaEl) {
+        const delta = drift.score_delta || 0;
+        if (delta > 0) {
+          scoreDeltaEl.textContent = `+${delta} pts`;
+          scoreDeltaEl.className = 'drift-stat-val text-success';
+        } else if (delta < 0) {
+          scoreDeltaEl.textContent = `${delta} pts`;
+          scoreDeltaEl.className = 'drift-stat-val text-danger';
+        } else {
+          scoreDeltaEl.textContent = '0 pts';
+          scoreDeltaEl.className = 'drift-stat-val';
+        }
+      }
+
+      const newSubs = drift.new_subdomains || [];
+      const newPorts = drift.new_open_ports || [];
+      const newVulns = drift.new_vulnerabilities || [];
+      const newTakeovers = drift.new_takeovers || [];
+      const newBuckets = drift.new_public_buckets || [];
+      const resolvedThreats = [
+        ...(drift.resolved_vulnerabilities || []),
+        ...(drift.resolved_takeovers || []),
+        ...(drift.resolved_public_buckets || []),
+        ...(drift.closed_ports || []),
+      ];
+
+      $('#drift-new-subs-count').textContent = newSubs.length;
+      $('#drift-new-ports-count').textContent = newPorts.length;
+      $('#drift-new-threats-count').textContent = newVulns.length + newTakeovers.length + newBuckets.length;
+      $('#drift-resolved-count').textContent = resolvedThreats.length;
+
+      $('#drift-baseline-time').textContent = data.prior_timestamp ? new Date(data.prior_timestamp).toLocaleString() : 'None (First run)';
+      $('#drift-current-time').textContent = data.current_timestamp ? new Date(data.current_timestamp).toLocaleString() : new Date().toLocaleString();
+
+      const badgeDrift = $('#badge-drift');
+      if (badgeDrift) {
+        if (!data.has_prior) badgeDrift.textContent = 'Base';
+        else badgeDrift.textContent = drift.score_delta !== 0 ? (drift.score_delta > 0 ? `+${drift.score_delta}` : `${drift.score_delta}`) : '0';
+      }
+      const quickDrift = $('#quick-badge-drift');
+      if (quickDrift) {
+        quickDrift.textContent = badgeDrift ? badgeDrift.textContent : 'Δ';
+      }
+
+      const listNewAssets = $('#drift-list-new-assets');
+      if (listNewAssets) {
+        listNewAssets.replaceChildren();
+        const combinedNew = [
+          ...newSubs.map(s => ({ type: 'Subdomain', val: s })),
+          ...newPorts.map(p => ({ type: 'Open Port', val: p })),
+        ];
+        $('#drift-badge-new-assets').textContent = combinedNew.length;
+        if (!combinedNew.length) {
+          listNewAssets.innerHTML = '<p class="empty-state">No new shadow assets detected compared to baseline.</p>';
+        } else {
+          combinedNew.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'finding-row';
+            row.innerHTML = `
+              <div><strong class="finding-name text-warning">${escapeHtml(item.val)}</strong></div>
+              <span class="finding-tag" style="background:rgba(234,179,8,0.18);color:#facc15;">+ ${escapeHtml(item.type)}</span>
+            `;
+            listNewAssets.appendChild(row);
+          });
+        }
+      }
+
+      const listNewThreats = $('#drift-list-new-threats');
+      if (listNewThreats) {
+        listNewThreats.replaceChildren();
+        const combinedThreats = [
+          ...newTakeovers.map(t => ({ type: 'Takeover', val: t })),
+          ...newBuckets.map(b => ({ type: 'Public Bucket', val: b })),
+          ...newVulns.map(v => ({ type: 'Weaponized CVE', val: v })),
+        ];
+        $('#drift-badge-new-threats').textContent = combinedThreats.length;
+        if (!combinedThreats.length) {
+          listNewThreats.innerHTML = '<p class="empty-state">No newly introduced vulnerabilities or takeovers.</p>';
+        } else {
+          combinedThreats.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'finding-row';
+            row.innerHTML = `
+              <div><strong class="finding-name text-danger">${escapeHtml(item.val)}</strong></div>
+              <span class="finding-tag" style="background:rgba(239,68,68,0.22);color:#f87171;font-weight:700;">+ ${escapeHtml(item.type)}</span>
+            `;
+            listNewThreats.appendChild(row);
+          });
+        }
+      }
+
+      const listResolved = $('#drift-list-resolved');
+      if (listResolved) {
+        listResolved.replaceChildren();
+        $('#drift-badge-resolved').textContent = resolvedThreats.length;
+        if (!resolvedThreats.length) {
+          listResolved.innerHTML = '<p class="empty-state">No previously exposed assets were closed.</p>';
+        } else {
+          resolvedThreats.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'finding-row';
+            row.innerHTML = `
+              <div><strong class="finding-name text-success">${escapeHtml(item)}</strong></div>
+              <span class="finding-tag" style="background:rgba(74,222,128,0.15);color:#4ade80;">Remediated</span>
+            `;
+            listResolved.appendChild(row);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Surface drift check skipped or failed:', err);
+    }
+  }
+
+  async function renderAttackPathGraph(graphData, job) {
+    let graph = graphData;
+    if (!graph && job?.id) {
+      try {
+        const res = await fetch(`/api/scans/${encodeURIComponent(job.id)}/attack-graph`);
+        if (res.ok) graph = await res.json();
+      } catch (e) {}
+    }
+
+    if (!graph && job?.summary) {
+      const target = job.target || 'target';
+      const sections = job.summary.sections || {};
+      const subs = (sections.subdomains || []).map(s => typeof s === 'string' ? s : (s.subdomain || s.name || '')).filter(Boolean);
+      const ips = sections.ip_records || [];
+      
+      const nodes = [{ id: `target_${target}`, label: target, type: 'target', severity: 'INFO' }];
+      const links = [];
+      
+      subs.slice(0, 8).forEach(sub => {
+        nodes.push({ id: `sub_${sub}`, label: sub, type: 'subdomain', severity: 'LOW' });
+        links.push({ source: `target_${target}`, target: `sub_${sub}`, label: 'Resolves' });
+      });
+      ips.slice(0, 6).forEach(ip => {
+        const ipStr = ip.ip || ip.ip_address || '';
+        if (ipStr) {
+          nodes.push({ id: `ip_${ipStr}`, label: ipStr, type: 'ip', severity: ip.is_cdn ? 'LOW' : 'INFO' });
+          links.push({ source: `target_${target}`, target: `ip_${ipStr}`, label: 'Hosts' });
+        }
+      });
+      graph = { nodes, links, attack_chains: [] };
+    }
+
+    if (!graph) return;
+
+    const chains = graph.attack_chains || [];
+    $('#graph-chains-badge').textContent = `${chains.length} Chain${chains.length === 1 ? '' : 's'}`;
+    $('#badge-graph').textContent = chains.length ? `${chains.length} Paths` : 'Graph';
+    const quickGraph = $('#quick-badge-graph');
+    if (quickGraph) quickGraph.textContent = chains.length ? `${chains.length} Paths` : 'Graph';
+
+    const chainsList = $('#attack-chains-list');
+    if (chainsList) {
+      chainsList.replaceChildren();
+      if (!chains.length) {
+        chainsList.innerHTML = '<p class="empty-state">✓ No multi-hop adversary traversal paths identified. Perimeter defenses intact.</p>';
+      } else {
+        chains.forEach(chain => {
+          const row = document.createElement('div');
+          const isCrit = chain.severity === 'CRITICAL';
+          row.className = `attack-chain-row ${isCrit ? 'critical' : 'high'}`;
+          row.innerHTML = `
+            <div class="attack-chain-head">
+              <span class="attack-chain-title">${escapeHtml(chain.title)}</span>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span class="finding-tag" style="${isCrit ? 'background:rgba(239,68,68,0.22);color:#f87171;' : 'background:rgba(249,115,22,0.22);color:#fb923c;'} font-weight:700;">${escapeHtml(chain.severity)}</span>
+                <span class="cat-chip" style="font-size:10px;">${escapeHtml(chain.mitre || '')}</span>
+              </div>
+            </div>
+            <div class="chain-steps-wrap">
+              ${(chain.path || []).map((step, idx, arr) => `
+                <span class="chain-step ${idx === arr.length - 1 ? 'impact' : ''}">${escapeHtml(step)}</span>
+                ${idx < arr.length - 1 ? '<span class="chain-arrow">→</span>' : ''}
+              `).join('')}
+            </div>
+          `;
+          chainsList.appendChild(row);
+        });
+      }
+    }
+
+    const svg = $('#attack-graph-svg');
+    const container = $('#graph-canvas-container');
+    const tooltip = $('#graph-tooltip');
+    if (!svg || !container) return;
+
+    const width = container.clientWidth || 920;
+    const height = 480;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.replaceChildren();
+
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.innerHTML = `
+      <marker id="arrow-default" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1 L 10 5 L 0 9 z" fill="rgba(67, 226, 210, 0.6)"/>
+      </marker>
+      <marker id="arrow-crit" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1 L 10 5 L 0 9 z" fill="#f87171"/>
+      </marker>
+    `;
+    svg.appendChild(defs);
+
+    const nodes = graph.nodes || [];
+    const layers = { target: [], subdomain: [], ip: [], exposure: [], impact: [] };
+    nodes.forEach(n => {
+      const type = n.type || 'subdomain';
+      if (layers[type]) layers[type].push(n);
+      else layers.subdomain.push(n);
+    });
+
+    const activeLayers = ['target', 'subdomain', 'ip', 'exposure', 'impact'].filter(l => layers[l].length > 0);
+    const colStep = (width - 160) / Math.max(1, activeLayers.length - 1);
+
+    const nodeCoords = new Map();
+    activeLayers.forEach((layerKey, colIdx) => {
+      const layerNodes = layers[layerKey];
+      const x = 80 + colIdx * colStep;
+      const rowStep = (height - 80) / (layerNodes.length + 1);
+      layerNodes.forEach((node, rowIdx) => {
+        const y = 40 + (rowIdx + 1) * rowStep;
+        nodeCoords.set(node.id, { x, y, node });
+      });
+    });
+
+    const gLinks = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    gLinks.className.baseVal = 'graph-links';
+    (graph.links || []).forEach(link => {
+      const src = nodeCoords.get(link.source);
+      const tgt = nodeCoords.get(link.target);
+      if (!src || !tgt) return;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const isCrit = link.severity === 'CRITICAL' || tgt.node.severity === 'CRITICAL';
+      const stroke = isCrit ? '#f87171' : (link.severity === 'HIGH' ? '#fb923c' : 'rgba(67, 226, 210, 0.35)');
+      const strokeWidth = isCrit ? '2.2' : '1.4';
+      const marker = isCrit ? 'url(#arrow-crit)' : 'url(#arrow-default)';
+
+      const cx1 = (src.x + tgt.x) / 2;
+      const cy1 = src.y;
+      const cx2 = (src.x + tgt.x) / 2;
+      const cy2 = tgt.y;
+
+      path.setAttribute('d', `M ${src.x} ${src.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${tgt.x} ${tgt.y}`);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', stroke);
+      path.setAttribute('stroke-width', strokeWidth);
+      path.setAttribute('marker-end', marker);
+      path.dataset.source = link.source;
+      path.dataset.target = link.target;
+      path.className.baseVal = 'graph-link-path';
+      gLinks.appendChild(path);
+    });
+    svg.appendChild(gLinks);
+
+    const gNodes = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    gNodes.className.baseVal = 'graph-nodes';
+
+    nodeCoords.forEach((coord, id) => {
+      const n = coord.node;
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.className.baseVal = 'graph-node-group';
+      group.style.cursor = 'pointer';
+
+      let fill = '#38bdf8';
+      let r = 8;
+      if (n.type === 'target') { fill = '#43e2d2'; r = 11; }
+      else if (n.type === 'ip') { fill = '#fb923c'; r = 7; }
+      else if (n.type === 'exposure') { fill = '#f87171'; r = 9; }
+      else if (n.type === 'impact') { fill = '#c084fc'; r = 10; }
+
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', coord.x);
+      circle.setAttribute('cy', coord.y);
+      circle.setAttribute('r', r);
+      circle.setAttribute('fill', fill);
+      circle.setAttribute('stroke', '#051216');
+      circle.setAttribute('stroke-width', '2');
+      if (n.severity === 'CRITICAL' || n.type === 'impact') {
+        circle.setAttribute('filter', 'drop-shadow(0 0 6px rgba(248, 113, 113, 0.8))');
+      }
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', coord.x);
+      text.setAttribute('y', coord.y + r + 13);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('fill', '#e4f2ee');
+      text.setAttribute('font-size', '10px');
+      text.setAttribute('font-family', 'monospace');
+      text.textContent = (n.label || '').length > 22 ? n.label.slice(0, 20) + '..' : n.label;
+
+      group.appendChild(circle);
+      group.appendChild(text);
+
+      group.addEventListener('mouseenter', (ev) => {
+        if (!tooltip) return;
+        tooltip.style.display = 'block';
+        tooltip.innerHTML = `
+          <strong style="color:${fill};display:block;margin-bottom:2px;">${escapeHtml(n.label)}</strong>
+          <div style="font-size:10px;color:#8ea39b;">Type: <code style="color:#e4f2ee;">${escapeHtml(n.type)}</code></div>
+          <div style="font-size:10px;color:#8ea39b;">Severity: <strong style="color:${n.severity === 'CRITICAL' ? '#f87171' : '#43e2d2'};">${escapeHtml(n.severity || 'INFO')}</strong></div>
+          ${n.meta && Object.keys(n.meta).length ? `<div style="font-size:9px;color:#94a3b8;margin-top:4px;">${escapeHtml(JSON.stringify(n.meta))}</div>` : ''}
+        `;
+        const rect = container.getBoundingClientRect();
+        tooltip.style.left = `${ev.clientX - rect.left + 15}px`;
+        tooltip.style.top = `${ev.clientY - rect.top + 10}px`;
+      });
+      group.addEventListener('mouseleave', () => {
+        if (tooltip) tooltip.style.display = 'none';
+      });
+
+      group.addEventListener('click', () => {
+        const isSelected = group.classList.toggle('selected');
+        $$('.graph-node-group', svg).forEach(g => {
+          if (g !== group) g.style.opacity = isSelected ? '0.25' : '1';
+        });
+        $$('.graph-link-path', svg).forEach(p => {
+          const connected = p.dataset.source === id || p.dataset.target === id;
+          p.style.opacity = isSelected ? (connected ? '1' : '0.1') : '1';
+          if (isSelected && connected) {
+            p.style.stroke = '#f87171';
+            p.style.strokeWidth = '3';
+          } else {
+            p.style.stroke = '';
+            p.style.strokeWidth = '';
+          }
+        });
+      });
+
+      gNodes.appendChild(group);
+    });
+    svg.appendChild(gNodes);
+
+    const resetBtn = $('#btn-recenter-graph');
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        $$('.graph-node-group', svg).forEach(g => {
+          g.classList.remove('selected');
+          g.style.opacity = '1';
+        });
+        $$('.graph-link-path', svg).forEach(p => {
+          p.style.opacity = '1';
+          p.style.stroke = '';
+          p.style.strokeWidth = '';
+        });
+      };
+    }
+
+    const critBtn = $('#btn-filter-critical-paths');
+    if (critBtn) {
+      critBtn.onclick = () => {
+        const critNodes = new Set();
+        (graph.links || []).forEach(l => {
+          if (l.severity === 'CRITICAL' || l.severity === 'HIGH') {
+            critNodes.add(l.source);
+            critNodes.add(l.target);
+          }
+        });
+        $$('.graph-node-group', svg).forEach(g => {
+          const textEl = g.querySelector('text');
+          const isCrit = textEl && Array.from(nodeCoords.values()).some(c => critNodes.has(c.node.id) && c.node.label.startsWith(textEl.textContent.replace('..', '')));
+          g.style.opacity = isCrit ? '1' : '0.15';
+        });
+        $$('.graph-link-path', svg).forEach(p => {
+          const isCritLink = critNodes.has(p.dataset.source) && critNodes.has(p.dataset.target);
+          p.style.opacity = isCritLink ? '1' : '0.1';
         });
       };
     }

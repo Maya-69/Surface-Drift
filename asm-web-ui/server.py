@@ -30,6 +30,9 @@ from pydantic import BaseModel, Field
 
 import database
 from surfacedrift.advanced_runner import run_advanced_assessment
+from surfacedrift.drift_engine import compute_surface_drift
+from surfacedrift.mitre_mapping import generate_mitre_matrix
+from surfacedrift.attack_graph import build_attack_graph
 
 APP_DIR = Path(__file__).resolve().parent
 _project_root_setting = os.getenv("ASM_PROJECT_ROOT")
@@ -115,6 +118,71 @@ class ExportZipRequest(BaseModel):
     target: str
     summary: dict[str, Any]
     advanced: Optional[dict[str, Any]] = None
+
+
+class DriftDiffRequest(BaseModel):
+    prior_scan_id: Optional[str] = None
+    current_scan_id: Optional[str] = None
+    prior_snapshot: Optional[dict[str, Any]] = None
+    current_snapshot: Optional[dict[str, Any]] = None
+
+
+def build_drift_snapshot(scan_dict: dict[str, Any]) -> dict[str, Any]:
+    summary = scan_dict.get("summary") or {}
+    sections = summary.get("sections") or {}
+    advanced = scan_dict.get("surfacedrift_advanced") or scan_dict.get("advanced") or {}
+    findings = advanced.get("findings") or {}
+    posture = advanced.get("posture") or {}
+
+    raw_subs = sections.get("subdomains") or []
+    subdomains = []
+    for s in raw_subs:
+        if isinstance(s, dict):
+            subdomains.append(s.get("subdomain") or s.get("name") or "")
+        elif isinstance(s, str):
+            subdomains.append(s)
+    subdomains = [s for s in subdomains if s]
+
+    open_ports = []
+    for item in sections.get("ports_and_vulns") or []:
+        ip = item.get("ip") or ""
+        for p in item.get("ports") or []:
+            open_ports.append(f"{ip}:{p}")
+
+    vulns = []
+    cves_data = findings.get("threat_prioritization", {}).get("cves") or []
+    for c in cves_data:
+        cve_id = c.get("cve_id")
+        if cve_id:
+            vulns.append(cve_id)
+
+    takeovers = []
+    for t in findings.get("subdomain_takeovers", {}).get("items") or []:
+        sub = t.get("subdomain")
+        if sub:
+            takeovers.append(sub)
+
+    public_buckets = []
+    for b in findings.get("cloud_storage", {}).get("buckets") or []:
+        if b.get("is_dangerous") or b.get("access_level") in {"PUBLIC_READ", "PUBLIC_WRITE"}:
+            public_buckets.append(b.get("bucket_name") or "")
+    public_buckets = [b for b in public_buckets if b]
+
+    risk_score = posture.get("score") if posture.get("score") is not None else scan_dict.get("risk_score", 100)
+    grade = posture.get("grade") or scan_dict.get("grade") or "A"
+
+    return {
+        "target": scan_dict.get("target", ""),
+        "scan_id": scan_dict.get("id") or scan_dict.get("scan_id", ""),
+        "timestamp": scan_dict.get("completed_at") or scan_dict.get("started_at") or utc_now(),
+        "subdomains": sorted(list(set(subdomains))),
+        "open_ports": sorted(list(set(open_ports))),
+        "vulnerabilities": sorted(list(set(vulns))),
+        "takeovers": sorted(list(set(takeovers))),
+        "public_buckets": sorted(list(set(public_buckets))),
+        "risk_score": risk_score,
+        "grade": grade,
+    }
 
 
 def utc_now() -> str:
@@ -1418,6 +1486,129 @@ def download_scan(scan_id: str):
         )
 
     raise HTTPException(status_code=404, detail="The report archive could not be found.")
+
+
+@app.get("/api/scans/{scan_id}/drift")
+def get_scan_drift(scan_id: str, compare_to: Optional[str] = None) -> dict[str, Any]:
+    current_job = find_or_reconstruct_job(scan_id)
+    if not current_job or not current_job.get("summary"):
+        raise HTTPException(status_code=404, detail="Current scan record or summary not found.")
+
+    target = current_job.get("target", "")
+    prior_job = None
+    if compare_to:
+        prior_job = find_or_reconstruct_job(compare_to)
+    else:
+        prior_db = database.get_previous_completed_scan(target, exclude_scan_id=scan_id)
+        if prior_db:
+            prior_job = prior_db
+
+    if not prior_job or not prior_job.get("summary"):
+        curr_snap = build_drift_snapshot(current_job)
+        return {
+            "has_prior": False,
+            "message": f"First baseline scan recorded for {target}. Future scans will track continuous surface drift.",
+            "current_snapshot": curr_snap,
+            "drift": {
+                "has_drift": False,
+                "has_critical_drift": False,
+                "score_delta": 0,
+                "prior_score": curr_snap["risk_score"],
+                "current_score": curr_snap["risk_score"],
+                "grade_changed": False,
+                "prior_grade": curr_snap["grade"],
+                "current_grade": curr_snap["grade"],
+                "new_subdomains": [],
+                "removed_subdomains": [],
+                "new_open_ports": [],
+                "closed_ports": [],
+                "new_vulnerabilities": [],
+                "resolved_vulnerabilities": [],
+                "new_takeovers": [],
+                "resolved_takeovers": [],
+                "new_public_buckets": [],
+                "resolved_public_buckets": [],
+            }
+        }
+
+    prior_snap = build_drift_snapshot(prior_job)
+    curr_snap = build_drift_snapshot(current_job)
+    drift_result = compute_surface_drift(prior_snap, curr_snap)
+
+    return {
+        "has_prior": True,
+        "target": target,
+        "prior_scan_id": prior_snap["scan_id"],
+        "prior_timestamp": prior_snap["timestamp"],
+        "current_scan_id": curr_snap["scan_id"],
+        "current_timestamp": curr_snap["timestamp"],
+        "drift": drift_result,
+        "prior_snapshot": prior_snap,
+        "current_snapshot": curr_snap,
+    }
+
+
+@app.post("/api/scans/drift-diff")
+def compute_arbitrary_drift_diff(payload: DriftDiffRequest) -> dict[str, Any]:
+    prior_snap = payload.prior_snapshot
+    curr_snap = payload.current_snapshot
+
+    if not prior_snap and payload.prior_scan_id:
+        p_job = find_or_reconstruct_job(payload.prior_scan_id)
+        if p_job:
+            prior_snap = build_drift_snapshot(p_job)
+
+    if not curr_snap and payload.current_scan_id:
+        c_job = find_or_reconstruct_job(payload.current_scan_id)
+        if c_job:
+            curr_snap = build_drift_snapshot(c_job)
+
+    if not prior_snap or not curr_snap:
+        raise HTTPException(status_code=400, detail="Both prior and current snapshots or valid scan IDs are required.")
+
+    drift_result = compute_surface_drift(prior_snap, curr_snap)
+    return {
+        "has_prior": True,
+        "prior_scan_id": prior_snap.get("scan_id", ""),
+        "current_scan_id": curr_snap.get("scan_id", ""),
+        "drift": drift_result,
+        "prior_snapshot": prior_snap,
+        "current_snapshot": curr_snap,
+    }
+
+
+@app.get("/api/scans/{scan_id}/attack-graph")
+def get_attack_graph_endpoint(scan_id: str) -> dict[str, Any]:
+    job = find_or_reconstruct_job(scan_id)
+    if not job or not job.get("summary"):
+        raise HTTPException(status_code=404, detail="Scan summary not found.")
+
+    adv = job.get("surfacedrift_advanced") or {}
+    if adv.get("attack_graph"):
+        return adv["attack_graph"]
+
+    summary = job["summary"]
+    sections = summary.get("sections") or {}
+    subdomains = [s.get("subdomain") if isinstance(s, dict) else s for s in sections.get("subdomains", [])]
+    ip_records = sections.get("ip_records", [])
+    findings = adv.get("findings") or {}
+
+    graph = build_attack_graph(job.get("target", "target"), subdomains, ip_records, findings)
+    return graph
+
+
+@app.get("/api/scans/{scan_id}/mitre")
+def get_mitre_endpoint(scan_id: str) -> dict[str, Any]:
+    job = find_or_reconstruct_job(scan_id)
+    if not job or not job.get("summary"):
+        raise HTTPException(status_code=404, detail="Scan summary not found.")
+
+    adv = job.get("surfacedrift_advanced") or {}
+    if adv.get("mitre_attack"):
+        return adv["mitre_attack"]
+
+    findings = adv.get("findings") or {}
+    return generate_mitre_matrix(findings)
 
 
 @app.get("/")

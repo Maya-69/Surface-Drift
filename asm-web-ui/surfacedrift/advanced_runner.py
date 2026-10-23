@@ -26,6 +26,8 @@ from .tls_auditor import audit_cryptographic_posture
 from .breach_intel import audit_leaked_credentials
 from .typosquat_monitor import audit_typosquatting_threats
 from .remediation_playbooks import generate_automated_playbooks
+from .mitre_mapping import generate_mitre_matrix
+from .attack_graph import build_attack_graph
 
 logger = logging.getLogger(__name__)
 
@@ -513,6 +515,33 @@ async def run_advanced_assessment(
             "typosquatting": typosquatting_data,
             "remediation_playbooks": remediation_playbooks,
         },
+        "mitre_attack": generate_mitre_matrix(remediation_playbooks.get("findings", {}) if "findings" in remediation_playbooks else {
+            "http_probing": {"live_hosts_count": live_count},
+            "subdomain_takeovers": {"count": len(takeovers_found)},
+            "cloud_storage": {"public_count": public_buckets_count},
+            "waf_bypass": {"count": len(waf_bypasses)},
+            "threat_prioritization": {"critical_count": critical_vulns_count, "high_count": high_vulns_count},
+            "email_security": email_sec_data,
+            "js_secrets": js_secrets_data,
+            "shadow_apis": shadow_api_data,
+            "eol_software": eol_data,
+            "broken_links": blh_data,
+            "waf_history": waf_history_data,
+            "exposed_configs": config_probe_data,
+            "tls_posture": tls_posture_data,
+            "breach_intel": breach_intel_data,
+            "typosquatting": typosquatting_data,
+        }),
+        "attack_graph": build_attack_graph(target, all_subs, enriched_ips, remediation_playbooks.get("findings", {}) if "findings" in remediation_playbooks else {
+            "subdomain_takeovers": {"items": takeovers_found},
+            "cloud_storage": {"buckets": cloud_buckets_found},
+            "waf_bypass": {"origins": waf_bypasses},
+            "threat_prioritization": {"cves": weaponized_vulns},
+            "email_security": email_sec_data,
+            "js_secrets": js_secrets_data,
+            "shadow_apis": shadow_api_data,
+            "exposed_configs": config_probe_data,
+        }),
         "logs": logs_collected,
     }
 
@@ -521,6 +550,12 @@ async def run_advanced_assessment(
     try:
         (output_dir / "surfacedrift_advanced_report.json").write_text(
             json.dumps(advanced_report, indent=2), encoding="utf-8"
+        )
+        (output_dir / "surfacedrift_mitre_attack.json").write_text(
+            json.dumps(advanced_report["mitre_attack"], indent=2), encoding="utf-8"
+        )
+        (output_dir / "surfacedrift_attack_graph.json").write_text(
+            json.dumps(advanced_report["attack_graph"], indent=2), encoding="utf-8"
         )
         (output_dir / "surfacedrift_executive_summary.md").write_text(
             ai_summary.get("content", ""), encoding="utf-8"

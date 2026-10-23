@@ -1755,3 +1755,331 @@ body.scan-mode .header-nav{display:none}body.scan-mode .mobile-menu{display:none
 
 
 
+
+/* =========================================================================
+   Surface Drift Time-Series Delta Styles
+   ========================================================================= */
+.text-warning { color: #facc15 !important; }
+.text-danger { color: #f87171 !important; }
+.text-success { color: #4ade80 !important; }
+
+.drift-hero-card {
+  background: rgba(7, 24, 30, 0.7);
+  border: 1px solid rgba(67, 226, 210, 0.25);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.drift-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.drift-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drift-stat-label {
+  font-size: 11px;
+  color: #8ea39b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drift-stat-val {
+  font-size: 24px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: #e4f2ee;
+}
+
+.drift-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(67, 226, 210, 0.12);
+  font-size: 11px;
+  color: #8ea39b;
+}
+
+.drift-meta-row strong {
+  color: #43e2d2;
+}
+
+.drift-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(67, 226, 210, 0.15);
+  color: #43e2d2;
+  border: 1px solid rgba(67, 226, 210, 0.3);
+}
+
+.drift-badge.critical {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.drift-sections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.drift-card {
+  background: rgba(7, 24, 30, 0.5);
+  border: 1px solid rgba(67, 226, 210, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.drift-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(5, 18, 22, 0.85);
+  border-bottom: 1px solid rgba(67, 226, 210, 0.1);
+}
+
+.drift-card-head h5 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.drift-list-box {
+  padding: 10px 14px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* =========================================================================
+   Attack Path Graph Styles
+   ========================================================================= */
+.attack-graph-wrapper {
+  background: rgba(4, 14, 18, 0.8);
+  border: 1px solid rgba(67, 226, 210, 0.2);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 20px;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(67, 226, 210, 0.1);
+  font-size: 11px;
+  color: #8ea39b;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-target { background: #43e2d2; box-shadow: 0 0 8px #43e2d2; }
+.dot-subdomain { background: #38bdf8; }
+.dot-ip { background: #fb923c; }
+.dot-exposure { background: #f87171; box-shadow: 0 0 8px rgba(248, 113, 113, 0.6); }
+.dot-impact { background: #c084fc; box-shadow: 0 0 8px rgba(192, 132, 252, 0.7); }
+
+.attack-chains-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attack-chain-row {
+  background: rgba(7, 24, 30, 0.7);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attack-chain-row.high {
+  border-color: rgba(249, 115, 22, 0.35);
+}
+
+.attack-chain-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.attack-chain-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #e4f2ee;
+}
+
+.chain-steps-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.chain-step {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(5, 18, 22, 0.9);
+  border: 1px solid rgba(67, 226, 210, 0.2);
+  color: #e4f2ee;
+  font-family: var(--font-mono, monospace);
+}
+
+.chain-step.impact {
+  border-color: #f87171;
+  color: #f87171;
+  font-weight: 700;
+}
+
+.chain-arrow {
+  color: #43e2d2;
+  font-weight: 700;
+}
+
+/* =========================================================================
+   MITRE ATT&CK Matrix Styles
+   ========================================================================= */
+.mitre-matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.mitre-tactic-col {
+  background: rgba(7, 24, 30, 0.55);
+  border: 1px solid rgba(67, 226, 210, 0.15);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mitre-tactic-head {
+  background: rgba(5, 18, 22, 0.9);
+  padding: 10px 12px;
+  border-bottom: 2px solid rgba(67, 226, 210, 0.4);
+}
+
+.mitre-tactic-head.critical-active {
+  border-bottom-color: #f87171;
+}
+
+.mitre-tactic-id {
+  font-size: 9px;
+  color: #8ea39b;
+  font-family: var(--font-mono, monospace);
+  display: block;
+}
+
+.mitre-tactic-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e4f2ee;
+  margin-top: 2px;
+  display: block;
+}
+
+.mitre-techniques-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mitre-technique-pill {
+  background: rgba(4, 14, 18, 0.7);
+  border: 1px solid rgba(67, 226, 210, 0.12);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.mitre-technique-pill:hover {
+  background: rgba(67, 226, 210, 0.08);
+  border-color: rgba(67, 226, 210, 0.35);
+  transform: translateY(-1px);
+}
+
+.mitre-technique-pill.threat-active {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.mitre-technique-pill.threat-active .mitre-tech-id {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.mitre-tech-id {
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  color: #43e2d2;
+}
+
+.mitre-tech-name {
+  color: #e4f2ee;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.mitre-tech-status {
+  font-size: 8px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.mitre-tech-status.active {
+  background: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  font-weight: 700;
+}
+
+.mitre-tech-status.clean {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+}

@@ -247,4 +247,39 @@ def delete_scan(scan_id: str, user_id: Optional[str] = None) -> bool:
         return cur.rowcount > 0
 
 
+def get_previous_completed_scan(target: str, exclude_scan_id: Optional[str] = None) -> Optional[dict[str, Any]]:
+    target = target.strip().lower()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        if exclude_scan_id:
+            cur.execute("""
+                SELECT * FROM scans
+                WHERE lower(target) = ? AND id != ? AND status = 'completed' AND summary_json IS NOT NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+            """, (target, exclude_scan_id))
+        else:
+            cur.execute("""
+                SELECT * FROM scans
+                WHERE lower(target) = ? AND status = 'completed' AND summary_json IS NOT NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+            """, (target,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        if res.get("summary_json"):
+            try:
+                res["summary"] = json.loads(res["summary_json"])
+            except Exception:
+                res["summary"] = None
+        if res.get("surfacedrift_json"):
+            try:
+                res["surfacedrift_advanced"] = json.loads(res["surfacedrift_json"])
+            except Exception:
+                res["surfacedrift_advanced"] = None
+        return res
+
+
 init_db()

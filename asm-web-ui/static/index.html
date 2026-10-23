@@ -792,6 +792,9 @@
             <button class="tab-link" type="button" data-tab="employees">Employees <span class="tab-badge" id="badge-employees">0</span></button>
             <button class="tab-link" type="button" data-tab="buckets">Cloud Buckets <span class="tab-badge" id="badge-buckets">0</span></button>
             <button class="tab-link" type="button" data-tab="creds">Credentials &amp; Hashes <span class="tab-badge" id="badge-creds">0</span></button>
+            <button class="tab-link" type="button" data-tab="drift">Surface Drift <span class="tab-badge" id="badge-drift">Δ</span></button>
+            <button class="tab-link" type="button" data-tab="attack-graph">Attack Graph <span class="tab-badge" id="badge-graph">Paths</span></button>
+            <button class="tab-link" type="button" data-tab="mitre">MITRE ATT&amp;CK <span class="tab-badge" id="badge-mitre">Matrix</span></button>
             <button class="tab-link" type="button" data-tab="artifacts">Additional Artifacts <span class="tab-badge" id="badge-artifacts">0</span></button>
           </nav>
 
@@ -838,6 +841,9 @@
                     <button class="quick-jump-btn" data-target-tab="security">Email Security <span class="tab-badge">SPF/DMARC</span></button>
                     <button class="quick-jump-btn" data-target-tab="employees">Employees <span class="tab-badge" id="quick-badge-employees">0</span></button>
                     <button class="quick-jump-btn" data-target-tab="buckets">Cloud Buckets <span class="tab-badge" id="quick-badge-buckets">0</span></button>
+                    <button class="quick-jump-btn" data-target-tab="drift" style="border-color:rgba(67,226,210,0.4);">Surface Drift <span class="tab-badge" id="quick-badge-drift">Δ</span></button>
+                    <button class="quick-jump-btn" data-target-tab="attack-graph" style="border-color:rgba(248,113,113,0.4);">Attack Graph <span class="tab-badge" id="quick-badge-graph">Paths</span></button>
+                    <button class="quick-jump-btn" data-target-tab="mitre" style="border-color:rgba(168,85,247,0.4);">MITRE ATT&amp;CK <span class="tab-badge" id="quick-badge-mitre">Matrix</span></button>
                     <button class="quick-jump-btn" data-target-tab="artifacts">Artifacts <span class="tab-badge" id="quick-badge-artifacts">0</span></button>
                   </div>
                 </div>
@@ -1048,6 +1054,137 @@
             <div class="tab-panel" id="pane-artifacts">
               <p class="section-lead">Raw reconnaissance artifacts generated during this scan.</p>
               <div class="artifacts-grid" id="grid-artifacts" style="margin-top: 16px;"></div>
+            </div>
+
+            <!-- 13. SURFACE DRIFT DELTA (Time-Series) -->
+            <div class="tab-panel" id="pane-drift">
+              <div class="panel-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+                <div>
+                  <h4 style="margin:0 0 4px 0;font-size:16px;">Surface Drift Continuous Exposure Delta</h4>
+                  <p class="panel-subtitle" style="margin:0;color:#8ea39b;font-size:12px;">Automated delta detection comparing current surface posture against previous baseline scans.</p>
+                </div>
+                <div class="drift-action-bar" style="display:flex;align-items:center;gap:10px;">
+                  <span class="drift-badge" id="drift-status-badge">Calculating Drift...</span>
+                  <button class="button button-sm button-secondary" id="btn-refresh-drift" type="button" style="padding:4px 10px;font-size:11px;">Re-check Baseline</button>
+                </div>
+              </div>
+              
+              <div class="drift-hero-card" id="drift-hero-card">
+                <div class="drift-stat-grid">
+                  <div class="drift-stat-item">
+                    <span class="drift-stat-label">Posture Score Delta</span>
+                    <strong class="drift-stat-val" id="drift-score-delta">0</strong>
+                  </div>
+                  <div class="drift-stat-item">
+                    <span class="drift-stat-label">New Shadow Subdomains</span>
+                    <strong class="drift-stat-val text-warning" id="drift-new-subs-count">0</strong>
+                  </div>
+                  <div class="drift-stat-item">
+                    <span class="drift-stat-label">New Exposed Ports</span>
+                    <strong class="drift-stat-val text-warning" id="drift-new-ports-count">0</strong>
+                  </div>
+                  <div class="drift-stat-item">
+                    <span class="drift-stat-label">New Threat Vectors</span>
+                    <strong class="drift-stat-val text-danger" id="drift-new-threats-count">0</strong>
+                  </div>
+                  <div class="drift-stat-item">
+                    <span class="drift-stat-label">Remediated Assets</span>
+                    <strong class="drift-stat-val text-success" id="drift-resolved-count">0</strong>
+                  </div>
+                </div>
+                <div class="drift-meta-row" id="drift-meta-row">
+                  <span>Baseline Scan: <strong id="drift-baseline-time">—</strong></span>
+                  <span>Current Assessment: <strong id="drift-current-time">—</strong></span>
+                </div>
+              </div>
+
+              <div class="drift-sections-grid">
+                <div class="drift-card">
+                  <div class="drift-card-head text-warning">
+                    <h5>🆕 New Shadow Assets Detected</h5>
+                    <span class="finding-badge" id="drift-badge-new-assets">0</span>
+                  </div>
+                  <div class="drift-list-box" id="drift-list-new-assets">
+                    <p class="empty-state">No new shadow assets detected compared to baseline.</p>
+                  </div>
+                </div>
+
+                <div class="drift-card">
+                  <div class="drift-card-head text-danger">
+                    <h5>🚨 New Threats &amp; Takeovers</h5>
+                    <span class="finding-badge" id="drift-badge-new-threats">0</span>
+                  </div>
+                  <div class="drift-list-box" id="drift-list-new-threats">
+                    <p class="empty-state">No newly introduced vulnerabilities or takeovers.</p>
+                  </div>
+                </div>
+
+                <div class="drift-card">
+                  <div class="drift-card-head text-success">
+                    <h5>✅ Remediated &amp; Closed Exposures</h5>
+                    <span class="finding-badge" id="drift-badge-resolved">0</span>
+                  </div>
+                  <div class="drift-list-box" id="drift-list-resolved">
+                    <p class="empty-state">No previously exposed assets were closed.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 14. GRAPH-BASED ATTACK PATH MODELING -->
+            <div class="tab-panel" id="pane-attack-graph">
+              <div class="panel-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+                <div>
+                  <h4 style="margin:0 0 4px 0;font-size:16px;">Graph-Based Attack Path Chaining</h4>
+                  <p class="panel-subtitle" style="margin:0;color:#8ea39b;font-size:12px;">Directed multi-hop attack graphs modeling adversary progression from external perimeter to high-impact compromise sinks.</p>
+                </div>
+                <div class="graph-controls-bar" style="display:flex;align-items:center;gap:8px;">
+                  <button class="button button-sm button-secondary" id="btn-recenter-graph" type="button" style="padding:4px 10px;font-size:11px;">Reset View</button>
+                  <button class="button button-sm button-primary" id="btn-filter-critical-paths" type="button" style="padding:4px 10px;font-size:11px;">Highlight Critical Chains</button>
+                </div>
+              </div>
+
+              <div class="attack-graph-wrapper">
+                <div class="graph-legend">
+                  <span class="legend-item"><span class="legend-dot dot-target"></span> Target Scope</span>
+                  <span class="legend-item"><span class="legend-dot dot-subdomain"></span> Subdomain Asset</span>
+                  <span class="legend-item"><span class="legend-dot dot-ip"></span> Infrastructure / IP</span>
+                  <span class="legend-item"><span class="legend-dot dot-exposure"></span> Exposure Vector</span>
+                  <span class="legend-item"><span class="legend-dot dot-impact"></span> Compromise Sink</span>
+                </div>
+                <div class="graph-canvas-container" id="graph-canvas-container" style="position:relative;width:100%;min-height:480px;background:#030b0e;border:1px solid rgba(67,226,210,0.18);border-radius:8px;overflow:hidden;">
+                  <svg id="attack-graph-svg" class="attack-graph-svg" style="width:100%;height:480px;display:block;"></svg>
+                  <div class="graph-tooltip" id="graph-tooltip" style="position:absolute;display:none;background:rgba(5,18,22,0.95);border:1px solid #43e2d2;padding:8px 12px;border-radius:6px;font-size:11px;color:#e4f2ee;pointer-events:none;z-index:100;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,0.6);"></div>
+                </div>
+              </div>
+
+              <div class="attack-chains-card" style="margin-top:20px;">
+                <div class="panel-header" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                  <h5 style="margin:0;font-size:14px;color:#e4f2ee;">Mapped Adversary Attack Traversal Chains</h5>
+                  <span class="finding-badge" id="graph-chains-badge">0 Chains</span>
+                </div>
+                <div class="attack-chains-list" id="attack-chains-list">
+                  <p class="empty-state">No actionable multi-hop attack paths mapped for this target.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 15. MITRE ATT&CK ENTERPRISE MATRIX -->
+            <div class="tab-panel" id="pane-mitre">
+              <div class="panel-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+                <div>
+                  <h4 style="margin:0 0 4px 0;font-size:16px;">MITRE ATT&amp;CK Enterprise Coverage Matrix (v15)</h4>
+                  <p class="panel-subtitle" style="margin:0;color:#8ea39b;font-size:12px;">Continuous mapping of external attack surface reconnaissance and CTEM audits against official MITRE Enterprise Tactics &amp; Techniques.</p>
+                </div>
+                <div class="mitre-summary-badges" style="display:flex;gap:8px;align-items:center;">
+                  <span class="finding-tag" id="mitre-tactics-tag" style="background:rgba(67,226,210,0.15);color:#43e2d2;">6 Tactics Audited</span>
+                  <span class="finding-tag" id="mitre-active-tag" style="background:rgba(239,68,68,0.15);color:#f87171;">0 Threats Triggered</span>
+                </div>
+              </div>
+
+              <div class="mitre-matrix-grid" id="mitre-matrix-grid">
+                <!-- Dynamically generated in app.js -->
+              </div>
             </div>
           </div>
 
