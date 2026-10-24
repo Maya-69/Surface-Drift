@@ -1459,15 +1459,33 @@ async def continue_surfacedrift_stream(
             finally:
                 await log_queue.put(None)
 
-        asyncio.create_task(runner())
+        runner_task = asyncio.create_task(runner())
+
+        # Flush initial keep-alive comment so proxy headers immediately reach client
+        yield ": keep-alive\n\n"
 
         while True:
-            item = await log_queue.get()
+            try:
+                item = await asyncio.wait_for(log_queue.get(), timeout=2.0)
+            except asyncio.TimeoutError:
+                if runner_task.done():
+                    break
+                yield ": ping\n\n"
+                continue
+
             if item is None:
                 break
             yield f"data: {json.dumps(item)}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.post("/api/scans/export-zip")

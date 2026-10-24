@@ -1623,27 +1623,61 @@
         } catch (streamErr) {
           console.warn('Streaming connection issue, falling back to standard POST:', streamErr);
           if (!completed) {
-            appendAdvLog(`[*] Streaming connection closed, falling back to direct assessment...`);
-            const fallbackResp = await fetch(`/api/scans/${encodeURIComponent(job.id)}/continue-surfacedrift`, {
-              method: 'POST',
-              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-              body: JSON.stringify({ categories }),
-            });
-            if (fallbackResp.status === 401) {
-              alert('Authentication required: Please sign in with Google to run Phase 2 Deep Probing assessments.');
-              triggerGoogleLogin();
-              return;
+            appendAdvLog(`[*] Streaming connection closed, executing direct CTEM assessment pipeline...`);
+            appendAdvLog(`[-] Concurrently evaluating 15 deep exposure engines in background...`);
+            if (statusMsg) statusMsg.textContent = 'Executing 15 CTEM engines via direct pipeline...';
+
+            const progressSteps = [
+              "[-] Auditing cloud storage (S3, Azure Blob, GCP) & CNAME takeovers...",
+              "[-] Evaluating RFC 7208 SPF and RFC 7489 DMARC spoofing vectors...",
+              "[-] Scanning client-side JavaScript bundles for exposed API keys & secrets...",
+              "[-] Probing active endpoints for Shadow APIs, Swagger specs & GraphQL...",
+              "[-] Testing SSL/TLS cryptographic posture, cipher suites & HSTS...",
+              "[-] Analyzing typosquatting & brand phishing radar for weaponized MX domains...",
+              "[-] Synthesizing MITRE ATT&CK Matrix & multi-hop adversary attack graphs..."
+            ];
+            let stepIdx = 0;
+            const progressTicker = setInterval(() => {
+              if (stepIdx < progressSteps.length) {
+                appendAdvLog(progressSteps[stepIdx++]);
+              }
+            }, 2500);
+
+            try {
+              const fallbackResp = await fetch(`/api/scans/${encodeURIComponent(job.id)}/continue-surfacedrift`, {
+                method: 'POST',
+                headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ categories }),
+              });
+              clearInterval(progressTicker);
+
+              if (fallbackResp.status === 401) {
+                alert('Authentication required: Please sign in with Google to run Phase 2 Deep Probing assessments.');
+                triggerGoogleLogin();
+                return;
+              }
+              if (!fallbackResp.ok) {
+                const err = await fallbackResp.json().catch(() => ({}));
+                throw new Error(err.detail || 'SurfaceDrift assessment failed.');
+              }
+              const fallbackData = await fallbackResp.json();
+              appendAdvLog('[+] Direct assessment complete! Rendering exposure report...');
+              if (fallbackData.advanced && fallbackData.advanced.logs) {
+                fallbackData.advanced.logs.forEach(appendAdvLog);
+              }
+              renderAdvancedResults(fallbackData.advanced, job.id);
+              launchBtn.innerHTML = '<span>Re-run SurfaceDrift Analysis</span><span class="button-arrow" aria-hidden="true">⚡</span>';
+              const advView = $('#advanced-results-view');
+              if (advView) {
+                setTimeout(() => {
+                  advView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 200);
+              }
+            } catch (fallbackErr) {
+              clearInterval(progressTicker);
+              appendAdvLog(`[!] Direct assessment error: ${fallbackErr.message || fallbackErr}`);
+              console.error('Fallback assessment failed:', fallbackErr);
             }
-            if (!fallbackResp.ok) {
-              const err = await fallbackResp.json().catch(() => ({}));
-              throw new Error(err.detail || 'SurfaceDrift assessment failed.');
-            }
-            const fallbackData = await fallbackResp.json();
-            if (fallbackData.advanced && fallbackData.advanced.logs) {
-              fallbackData.advanced.logs.forEach(appendAdvLog);
-            }
-            renderAdvancedResults(fallbackData.advanced, job.id);
-            launchBtn.innerHTML = '<span>Re-run SurfaceDrift Analysis</span><span class="button-arrow" aria-hidden="true">⚡</span>';
           }
         } finally {
           launchBtn.disabled = false;

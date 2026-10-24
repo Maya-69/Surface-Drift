@@ -95,13 +95,50 @@ async def run_advanced_assessment(
     # Clean subdomains list: guarantee root domain is included
     all_subs = list(dict.fromkeys([target] + [s.strip().lower() for s in subdomains if s.strip()]))
 
-    # 1. HTTP Probing & Tech Fingerprinting
+    # State containers for parallel module execution
     http_probed_results: List[Dict[str, Any]] = []
     live_count = 0
-    if "http_probe" in enabled_cats:
+    takeovers_found: List[Dict[str, Any]] = []
+    cloud_buckets_found: List[Dict[str, Any]] = []
+    public_buckets_count = 0
+    waf_bypasses: List[Dict[str, Any]] = []
+    enriched_ips: List[Dict[str, Any]] = ip_records
+    weaponized_vulns: List[Dict[str, Any]] = []
+    critical_vulns_count = 0
+    high_vulns_count = 0
+    email_sec_data: Dict[str, Any] = {
+        "spf_status": "NOT_AUDITED",
+        "dmarc_status": "NOT_AUDITED",
+        "spoofable": False,
+        "risk_flag": "NOT_AUDITED",
+    }
+    blh_data: Dict[str, Any] = {"external_domains_tested": 0, "broken_links_found": 0, "vulnerable_links": []}
+    waf_history_data: Dict[str, Any] = {"current_behind_cdn": False, "historical_ips_discovered": 0, "origin_bypasses_found": 0, "bypasses": []}
+    breach_intel_data: Dict[str, Any] = {"total_emails_audited": 0, "compromised_identities_count": 0, "critical_credential_leaks_count": 0, "breached_identities": []}
+    typosquatting_data: Dict[str, Any] = {"root_domain": target, "permutations_tested_count": 0, "active_squats_count": 0, "weaponized_phishing_count": 0, "active_squats": []}
+
+    # Exposed Admin Ports check (Instant synchronous metric)
+    exposed_admin_ports = 0
+    admin_port_numbers = {6379, 27017, 9200, 3389, 23, 5432, 3306}
+    for item in ports_and_vulns:
+        ports = item.get("ports", [])
+        for p in ports:
+            try:
+                p_num = int(str(p).split("/")[0])
+                if p_num in admin_port_numbers:
+                    exposed_admin_ports += 1
+                    emit(f"[!] Warning: Exposed sensitive administration port {p} detected on IP {item.get('ip')}")
+            except Exception:
+                pass
+
+    # ---------------- STAGE 1: Parallel Asset-Independent & OSINT Audits ----------------
+    async def task_http_probing():
+        nonlocal http_probed_results, live_count
+        if "http_probe" not in enabled_cats:
+            return
         probe_limit = all_subs[:80]
-        emit(f"[-] Starting HTTP/HTTPS probing across {len(probe_limit)} subdomains (concurrency=20)...")
-        probe_objs = await probe_subdomains(probe_limit, max_concurrency=20, timeout=4.5)
+        emit(f"[-] Starting HTTP/HTTPS probing across {len(probe_limit)} subdomains (concurrency=25)...")
+        probe_objs = await probe_subdomains(probe_limit, max_concurrency=25, timeout=3.5)
         for obj in probe_objs:
             if obj.is_live:
                 live_count += 1
@@ -110,6 +147,7 @@ async def run_advanced_assessment(
                 emit(f"[+] [HTTP {status_code}] {obj.subdomain} — {tech_snippet}")
             http_probed_results.append({
                 "subdomain": obj.subdomain,
+                "url": getattr(obj, "url", f"https://{obj.subdomain}" if obj.https_status else f"http://{obj.subdomain}"),
                 "is_live": obj.is_live,
                 "http_status": obj.http_status,
                 "https_status": obj.https_status,
@@ -120,12 +158,13 @@ async def run_advanced_assessment(
             })
         emit(f"[+] HTTP Probing complete: {live_count} live web endpoints detected across {len(probe_limit)} targets")
 
-    # 2. Subdomain Takeover Auditing
-    takeovers_found: List[Dict[str, Any]] = []
-    if "takeover" in enabled_cats:
+    async def task_takeover():
+        nonlocal takeovers_found
+        if "takeover" not in enabled_cats:
+            return
         emit(f"[-] Querying DNS CNAME records for {len(all_subs[:80])} hostnames...")
         emit("[*] Auditing 14 cloud service signatures (GitHub Pages, AWS S3, Heroku, Shopify, Zendesk, Fastly, etc.)...")
-        takeover_objs = await audit_subdomains_takeover(all_subs[:80], concurrency=15, timeout=4.0)
+        takeover_objs = await audit_subdomains_takeover(all_subs[:80], concurrency=20, timeout=3.5)
         for t in takeover_objs:
             if t.is_vulnerable:
                 takeovers_found.append({
@@ -140,13 +179,13 @@ async def run_advanced_assessment(
         else:
             emit(f"[!] Subdomain takeover audit finished: {len(takeovers_found)} vulnerable hostnames found!")
 
-    # 3. Cloud Storage Auditing
-    cloud_buckets_found: List[Dict[str, Any]] = []
-    public_buckets_count = 0
-    if "cloud_audit" in enabled_cats:
+    async def task_cloud_storage():
+        nonlocal cloud_buckets_found, public_buckets_count
+        if "cloud_audit" not in enabled_cats:
+            return
         emit(f"[-] Generating cloud storage permutations for '{target}'...")
         emit("[*] Concurrently auditing AWS S3, Azure Blob, and GCP Cloud Storage buckets...")
-        cloud_objs = await audit_cloud_storage(target, max_concurrency=12)
+        cloud_objs = await audit_cloud_storage(target, max_concurrency=15)
         for b in cloud_objs:
             if b.is_dangerous:
                 public_buckets_count += 1
@@ -166,48 +205,45 @@ async def run_advanced_assessment(
         else:
             emit(f"[+] Cloud storage audit complete: {len(cloud_buckets_found)} buckets tested ({public_buckets_count} public)")
 
-    # 4. Infrastructure & WAF Origin Bypass
-    waf_bypasses: List[Dict[str, Any]] = []
-    enriched_ips: List[Dict[str, Any]] = []
-    if "waf_bypass" in enabled_cats:
-        emit(f"[-] Inspecting BGP ASNs and CDN edge routing for {len(ip_records)} IP addresses...")
-        ip_payloads = []
-        for rec in ip_records:
-            ip_str = rec.get("ip") or rec.get("ip_address") or ""
-            asn_org = rec.get("asn_description") or rec.get("asn_org") or ""
-            asn = rec.get("asn") or ""
-            is_cdn, provider = is_cdn_ip(asn_org=asn_org, asn=asn)
-            ip_payloads.append({
-                "ip_address": ip_str,
-                "asn": asn,
-                "asn_org": asn_org,
-                "cloud_provider": provider or asn_org,
-                "is_cdn": is_cdn,
-                "hostnames": [target],
-                "ports": rec.get("ports", []),
-            })
+    async def task_waf_bypass():
+        nonlocal waf_bypasses, enriched_ips
+        if "waf_bypass" in enabled_cats:
+            emit(f"[-] Inspecting BGP ASNs and CDN edge routing for {len(ip_records)} IP addresses...")
+            ip_payloads = []
+            for rec in ip_records:
+                ip_str = rec.get("ip") or rec.get("ip_address") or ""
+                asn_org = rec.get("asn_description") or rec.get("asn_org") or ""
+                asn = rec.get("asn") or ""
+                is_cdn, provider = is_cdn_ip(asn_org=asn_org, asn=asn)
+                ip_payloads.append({
+                    "ip_address": ip_str,
+                    "asn": asn,
+                    "asn_org": asn_org,
+                    "cloud_provider": provider or asn_org,
+                    "is_cdn": is_cdn,
+                    "hostnames": [target],
+                    "ports": rec.get("ports", []),
+                })
 
-        evaluated = evaluate_waf_bypass(ip_payloads)
-        for item in evaluated:
-            if item.get("is_waf_bypass"):
-                waf_bypasses.append(item)
-                emit(f"[!] Warning: Potential WAF origin bypass on IP {item.get('ip_address')} ({item.get('asn_org', 'Direct Origin')})")
-            enriched_ips.append(item)
-        if not waf_bypasses:
-            emit("[+] WAF origin bypass analysis complete: All assets routed through recognized CDN edge")
-        else:
-            emit(f"[+] WAF origin bypass analysis complete: {len(waf_bypasses)} direct origins identified")
-    else:
-        enriched_ips = ip_records
+            evaluated = evaluate_waf_bypass(ip_payloads)
+            enriched_ips = []
+            for item in evaluated:
+                if item.get("is_waf_bypass"):
+                    waf_bypasses.append(item)
+                    emit(f"[!] Warning: Potential WAF origin bypass on IP {item.get('ip_address')} ({item.get('asn_org', 'Direct Origin')})")
+                enriched_ips.append(item)
+            if not waf_bypasses:
+                emit("[+] WAF origin bypass analysis complete: All assets routed through recognized CDN edge")
+            else:
+                emit(f"[+] WAF origin bypass analysis complete: {len(waf_bypasses)} direct origins identified")
 
-    # 5. Threat Prioritization (EPSS & CISA KEV)
-    weaponized_vulns: List[Dict[str, Any]] = []
-    critical_vulns_count = 0
-    high_vulns_count = 0
-    if "epss_kev" in enabled_cats:
+    async def task_epss_kev():
+        nonlocal weaponized_vulns, critical_vulns_count, high_vulns_count
+        if "epss_kev" not in enabled_cats:
+            return
         emit("[-] Prioritizing vulnerabilities via FIRST.org EPSS and CISA KEV catalog...")
         import httpx
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=3.5) as client:
             for item in ports_and_vulns:
                 v_list = item.get("vulnerabilities", [])
                 for v in v_list:
@@ -238,88 +274,23 @@ async def run_advanced_assessment(
         else:
             emit(f"[+] Threat prioritization complete: {len(weaponized_vulns)} CVEs evaluated ({critical_vulns_count} critical)")
 
-    # 6. Email Security Posture
-    email_sec_data: Dict[str, Any] = {}
-    if "email_sec" in enabled_cats:
-        emit(f"[-] Querying DNS TXT records for SPF and DMARC enforcement on '{target}'...")
-        email_sec_data = await audit_email_security(target)
-        spf = email_sec_data.get("spf_status", "NOT_FOUND")
-        dmarc = email_sec_data.get("dmarc_status", "NOT_FOUND")
-        spoof = email_sec_data.get("spoofable", False)
-        if spoof:
-            emit(f"[!] Email Spoofing Risk: SPF={spf}, DMARC={dmarc} — Unauthenticated email spoofing possible")
-        else:
-            emit(f"[+] Email Posture Enforced: SPF={spf}, DMARC={dmarc} — Spoofing prevented")
-    else:
-        email_sec_data = {
-            "spf_status": "NOT_AUDITED",
-            "dmarc_status": "NOT_AUDITED",
-            "spoofable": False,
-            "risk_flag": "NOT_AUDITED",
-        }
+    async def task_email_security():
+        nonlocal email_sec_data
+        if "email_sec" in enabled_cats:
+            emit(f"[-] Querying DNS TXT records for SPF and DMARC enforcement on '{target}'...")
+            email_sec_data = await audit_email_security(target)
+            spf = email_sec_data.get("spf_status", "NOT_FOUND")
+            dmarc = email_sec_data.get("dmarc_status", "NOT_FOUND")
+            spoof = email_sec_data.get("spoofable", False)
+            if spoof:
+                emit(f"[!] Email Spoofing Risk: SPF={spf}, DMARC={dmarc} — Unauthenticated email spoofing possible")
+            else:
+                emit(f"[+] Email Posture Enforced: SPF={spf}, DMARC={dmarc} — Spoofing prevented")
 
-    # Exposed Admin Ports check
-    exposed_admin_ports = 0
-    admin_port_numbers = {6379, 27017, 9200, 3389, 23, 5432, 3306}
-    for item in ports_and_vulns:
-        ports = item.get("ports", [])
-        for p in ports:
-            try:
-                p_num = int(str(p).split("/")[0])
-                if p_num in admin_port_numbers:
-                    exposed_admin_ports += 1
-                    emit(f"[!] Warning: Exposed sensitive administration port {p} detected on IP {item.get('ip')}")
-            except Exception:
-                pass
-
-    # Extract live hosts and URLs for deep checks
-    live_target_urls = [h["url"] for h in http_probed_results if h.get("is_live") and h.get("url")]
-    if not live_target_urls:
-        live_target_urls = [f"https://{target}", f"http://{target}"]
-    live_subdomain_names = [h.get("subdomain") or target for h in http_probed_results if h.get("is_live")] or [target]
-
-    # 7. JavaScript Secrets Extraction Engine
-    js_secrets_data = {"scripts_scanned_count": 0, "secrets_found_count": 0, "findings": []}
-    if "js_secrets" in enabled_cats:
-        emit("[-] Extracting loaded JavaScript files and auditing for leaked credentials (AWS, Stripe, Google, Firebase)...")
-        js_secrets_data = await extract_and_scan_js_secrets(live_target_urls[:8])
-        sec_count = js_secrets_data.get("secrets_found_count", 0)
-        if sec_count > 0:
-            emit(f"[!] Alert: {sec_count} hardcoded credentials/tokens discovered across loaded JavaScript files!")
-            for sec in js_secrets_data.get("findings", [])[:5]:
-                emit(f"[*] Found {sec['secret_type']} ({sec['severity']}): {sec['redacted_value']} in {sec['script_url']}")
-        else:
-            emit(f"[+] JS Secrets check complete: {js_secrets_data.get('scripts_scanned_count', 0)} scripts analyzed, 0 secrets leaked")
-
-    # 8. Shadow API & Swagger Discovery
-    shadow_api_data = {"hosts_probed_count": 0, "exposed_endpoints_count": 0, "endpoints": []}
-    if "shadow_api" in enabled_cats:
-        emit("[-] Probing active hosts for Shadow APIs, Swagger/OpenAPI docs, and GraphQL introspection...")
-        shadow_api_data = await discover_shadow_apis(live_subdomain_names[:12])
-        api_count = shadow_api_data.get("exposed_endpoints_count", 0)
-        if api_count > 0:
-            emit(f"[!] Warning: {api_count} exposed API documentation / schema endpoints discovered!")
-            for ep in shadow_api_data.get("endpoints", [])[:5]:
-                emit(f"[*] {ep['type']} exposed at {ep['url']}")
-        else:
-            emit("[+] Shadow API probe complete: No unauthenticated API/Swagger documentation portals exposed")
-
-    # 9. End-of-Life (EOL) & Vulnerable Dependency Mapping
-    eol_data = {"eol_findings_count": 0, "findings": []}
-    if "eol_audit" in enabled_cats:
-        emit("[-] Correlating discovered technology stack against End-of-Life (EOL) & unsupported software registry...")
-        eol_data = audit_eol_technologies(http_probed_results)
-        eol_count = eol_data.get("eol_findings_count", 0)
-        if eol_count > 0:
-            emit(f"[!] Deprecation Warning: {eol_count} End-of-Life / legacy software runtime(s) detected!")
-            for e in eol_data.get("findings", [])[:5]:
-                emit(f"[*] {e['hostname']}: {e['product']} {e['detected_version']} is EOL (Threshold: {e['eol_threshold']}, Recommend: {e['recommended_version']})")
-        else:
-            emit("[+] EOL Audit complete: No unsupported legacy software runtimes detected")
-
-    # 10. Broken Link Hijacking (BLH) Detector
-    blh_data = {"external_domains_tested": 0, "broken_links_found": 0, "vulnerable_links": []}
-    if "blh_audit" in enabled_cats:
+    async def task_blh():
+        nonlocal blh_data
+        if "blh_audit" not in enabled_cats:
+            return
         emit("[-] Crawling target homepage for outbound external links & auditing for Broken Link Hijacking (NXDOMAIN)...")
         blh_data = await detect_broken_link_hijacking(target)
         blh_count = blh_data.get("broken_links_found", 0)
@@ -330,9 +301,10 @@ async def run_advanced_assessment(
         else:
             emit(f"[+] BLH Audit complete: {blh_data.get('external_domains_tested', 0)} external domains tested, all active")
 
-    # 11. WAF Origin Bypass Mapping (Historical OSINT)
-    waf_history_data = {"current_behind_cdn": False, "historical_ips_discovered": 0, "origin_bypasses_found": 0, "bypasses": []}
-    if "waf_history" in enabled_cats:
+    async def task_waf_history():
+        nonlocal waf_history_data
+        if "waf_history" not in enabled_cats:
+            return
         emit("[-] Querying historical certificate and DNS records to uncover potential WAF origin bypass backend IPs...")
         raw_ips = [r.get("ip") or r.get("ip_address") for r in ip_records if r.get("ip") or r.get("ip_address")]
         waf_history_data = await audit_waf_historical_origin_bypasses(target, raw_ips)
@@ -344,37 +316,10 @@ async def run_advanced_assessment(
         else:
             emit("[+] WAF Historical Audit complete: No direct backend origin bypasses discovered")
 
-    # 12. Exposed Configuration Probing
-    config_probe_data = {"hosts_tested_count": 0, "exposed_configs_found": 0, "exposed_files": []}
-    if "config_probe" in enabled_cats:
-        emit("[-] Asynchronously probing live hosts for sensitive configuration files (/.git/config, /.env, /backup.zip, /server-status)...")
-        config_probe_data = await probe_exposed_configurations(live_subdomain_names[:12])
-        cfg_count = config_probe_data.get("exposed_configs_found", 0)
-        if cfg_count > 0:
-            emit(f"[!] CRITICAL EXPOSURE: {cfg_count} exposed configuration / backup files accessible without authentication!")
-            for cf in config_probe_data.get("exposed_files", [])[:5]:
-                emit(f"[!] {cf['description']} ({cf['severity']}) exposed at: {cf['url']}")
-        else:
-            emit("[+] Configuration Probing complete: No sensitive configuration or backup files exposed")
-
-    # 13. SSL/TLS Cryptographic Posture (Compliance)
-    tls_posture_data = {"endpoints_audited": 0, "expiring_soon_count": 0, "missing_hsts_count": 0, "weak_protocol_count": 0, "certificates": []}
-    if "tls_posture" in enabled_cats:
-        emit("[-] Initiating asynchronous TLS handshakes to audit certificates, ciphers, and HSTS enforcement...")
-        tls_posture_data = await audit_cryptographic_posture(live_subdomain_names[:15])
-        exp_count = tls_posture_data.get("expiring_soon_count", 0)
-        hsts_count = tls_posture_data.get("missing_hsts_count", 0)
-        weak_count = tls_posture_data.get("weak_protocol_count", 0)
-        if exp_count > 0 or weak_count > 0:
-            emit(f"[!] TLS Alert: {exp_count} cert(s) expiring soon, {weak_count} weak/deprecated protocol(s) detected!")
-        else:
-            emit(f"[+] Cryptographic Posture audit complete: {tls_posture_data.get('endpoints_audited', 0)} HTTPS endpoint(s) verified")
-        if hsts_count > 0:
-            emit(f"[*] HSTS Notice: {hsts_count} endpoint(s) lack Strict-Transport-Security header")
-
-    # 14. Leaked Credential & Breach Intelligence (Identity Risk)
-    breach_intel_data = {"total_emails_audited": 0, "compromised_identities_count": 0, "critical_credential_leaks_count": 0, "breached_identities": []}
-    if "breach_intel" in enabled_cats:
+    async def task_breach_intel():
+        nonlocal breach_intel_data
+        if "breach_intel" not in enabled_cats:
+            return
         emit(f"[-] Querying breach intelligence & credential exposure databases for target identities...")
         breach_intel_data = await audit_leaked_credentials(scraped_emails, target)
         comp_count = breach_intel_data.get("compromised_identities_count", 0)
@@ -386,9 +331,10 @@ async def run_advanced_assessment(
         else:
             emit(f"[+] Breach Intelligence check complete: {breach_intel_data.get('total_emails_audited', 0)} email(s) analyzed, zero critical breaches found")
 
-    # 15. Typosquatting & Brand Phishing Monitor (Threat Intel)
-    typosquatting_data = {"root_domain": target, "permutations_tested_count": 0, "active_squats_count": 0, "weaponized_phishing_count": 0, "active_squats": []}
-    if "typosquatting" in enabled_cats:
+    async def task_typosquatting():
+        nonlocal typosquatting_data
+        if "typosquatting" not in enabled_cats:
+            return
         emit("[-] Generating brand permutation lookalikes & querying DNS/MX for active typosquatting / phishing threats...")
         typosquatting_data = await audit_typosquatting_threats(target)
         sq_count = typosquatting_data.get("active_squats_count", 0)
@@ -402,6 +348,112 @@ async def run_advanced_assessment(
             emit(f"[*] Brand Alert: {sq_count} lookalike domain(s) are registered and resolving to IP addresses")
         else:
             emit(f"[+] Typosquatting check complete: {typosquatting_data.get('permutations_tested_count', 0)} variations tested, zero active lookalikes")
+
+    # Run all Stage 1 discovery engines concurrently
+    await asyncio.gather(
+        task_http_probing(),
+        task_takeover(),
+        task_cloud_storage(),
+        task_waf_bypass(),
+        task_epss_kev(),
+        task_email_security(),
+        task_blh(),
+        task_waf_history(),
+        task_breach_intel(),
+        task_typosquatting(),
+        return_exceptions=True
+    )
+
+    # ---------------- STAGE 2: Parallel Host-Dependent Deep Probes ----------------
+    live_target_urls = [h["url"] for h in http_probed_results if h.get("is_live") and h.get("url")]
+    if not live_target_urls:
+        live_target_urls = [f"https://{target}", f"http://{target}"]
+    live_subdomain_names = [h.get("subdomain") or target for h in http_probed_results if h.get("is_live")] or [target]
+
+    js_secrets_data = {"scripts_scanned_count": 0, "secrets_found_count": 0, "findings": []}
+    shadow_api_data = {"hosts_probed_count": 0, "exposed_endpoints_count": 0, "endpoints": []}
+    config_probe_data = {"hosts_tested_count": 0, "exposed_configs_found": 0, "exposed_files": []}
+    tls_posture_data = {"endpoints_audited": 0, "expiring_soon_count": 0, "missing_hsts_count": 0, "weak_protocol_count": 0, "certificates": []}
+
+    async def task_js_secrets():
+        nonlocal js_secrets_data
+        if "js_secrets" not in enabled_cats:
+            return
+        emit("[-] Extracting loaded JavaScript files and auditing for leaked credentials (AWS, Stripe, Google, Firebase)...")
+        js_secrets_data = await extract_and_scan_js_secrets(live_target_urls[:8])
+        sec_count = js_secrets_data.get("secrets_found_count", 0)
+        if sec_count > 0:
+            emit(f"[!] Alert: {sec_count} hardcoded credentials/tokens discovered across loaded JavaScript files!")
+            for sec in js_secrets_data.get("findings", [])[:5]:
+                emit(f"[*] Found {sec['secret_type']} ({sec['severity']}): {sec['redacted_value']} in {sec['script_url']}")
+        else:
+            emit(f"[+] JS Secrets check complete: {js_secrets_data.get('scripts_scanned_count', 0)} scripts analyzed, 0 secrets leaked")
+
+    async def task_shadow_api():
+        nonlocal shadow_api_data
+        if "shadow_api" not in enabled_cats:
+            return
+        emit("[-] Probing active hosts for Shadow APIs, Swagger/OpenAPI docs, and GraphQL introspection...")
+        shadow_api_data = await discover_shadow_apis(live_subdomain_names[:12])
+        api_count = shadow_api_data.get("exposed_endpoints_count", 0)
+        if api_count > 0:
+            emit(f"[!] Warning: {api_count} exposed API documentation / schema endpoints discovered!")
+            for ep in shadow_api_data.get("endpoints", [])[:5]:
+                emit(f"[*] {ep['type']} exposed at {ep['url']}")
+        else:
+            emit("[+] Shadow API probe complete: No unauthenticated API/Swagger documentation portals exposed")
+
+    async def task_config_probe():
+        nonlocal config_probe_data
+        if "config_probe" not in enabled_cats:
+            return
+        emit("[-] Asynchronously probing live hosts for sensitive configuration files (/.git/config, /.env, /backup.zip, /server-status)...")
+        config_probe_data = await probe_exposed_configurations(live_subdomain_names[:12])
+        cfg_count = config_probe_data.get("exposed_configs_found", 0)
+        if cfg_count > 0:
+            emit(f"[!] CRITICAL EXPOSURE: {cfg_count} exposed configuration / backup files accessible without authentication!")
+            for cf in config_probe_data.get("exposed_files", [])[:5]:
+                emit(f"[!] {cf['description']} ({cf['severity']}) exposed at: {cf['url']}")
+        else:
+            emit("[+] Configuration Probing complete: No sensitive configuration or backup files exposed")
+
+    async def task_tls_posture():
+        nonlocal tls_posture_data
+        if "tls_posture" not in enabled_cats:
+            return
+        emit("[-] Initiating asynchronous TLS handshakes to audit certificates, ciphers, and HSTS enforcement...")
+        tls_posture_data = await audit_cryptographic_posture(live_subdomain_names[:15])
+        exp_count = tls_posture_data.get("expiring_soon_count", 0)
+        hsts_count = tls_posture_data.get("missing_hsts_count", 0)
+        weak_count = tls_posture_data.get("weak_protocol_count", 0)
+        if exp_count > 0 or weak_count > 0:
+            emit(f"[!] TLS Alert: {exp_count} cert(s) expiring soon, {weak_count} weak/deprecated protocol(s) detected!")
+        else:
+            emit(f"[+] Cryptographic Posture audit complete: {tls_posture_data.get('endpoints_audited', 0)} HTTPS endpoint(s) verified")
+        if hsts_count > 0:
+            emit(f"[*] HSTS Notice: {hsts_count} endpoint(s) lack Strict-Transport-Security header")
+
+    # Run all Stage 2 deep probes concurrently
+    await asyncio.gather(
+        task_js_secrets(),
+        task_shadow_api(),
+        task_config_probe(),
+        task_tls_posture(),
+        return_exceptions=True
+    )
+
+    # 9. End-of-Life (EOL) & Vulnerable Dependency Mapping (CPU instant analysis)
+    eol_data = {"eol_findings_count": 0, "findings": []}
+    if "eol_audit" in enabled_cats:
+        emit("[-] Correlating discovered technology stack against End-of-Life (EOL) & unsupported software registry...")
+        eol_data = audit_eol_technologies(http_probed_results)
+        eol_count = eol_data.get("eol_findings_count", 0)
+        if eol_count > 0:
+            emit(f"[!] Deprecation Warning: {eol_count} End-of-Life / legacy software runtime(s) detected!")
+            for e in eol_data.get("findings", [])[:5]:
+                emit(f"[*] {e['hostname']}: {e['product']} {e['detected_version']} is EOL (Threshold: {e['eol_threshold']}, Recommend: {e['recommended_version']})")
+        else:
+            emit("[+] EOL Audit complete: No unsupported legacy software runtimes detected")
 
     # Intermediate findings dict for automated playbooks & scoring
     current_findings = {
