@@ -1,90 +1,134 @@
-# AttackSurfaceMapper Web UI
+# SurfaceDrift Web Engine & CTEM Workspace
 
-A minimal, animated website for the existing AttackSurfaceMapper CLI. It includes a landing page, target-entry screen, live scan progress, a result summary, and a ZIP download of the scan's output artifacts.
+This directory contains the web dashboard, API layer, and Continuous Threat Exposure Management (CTEM) engine for **SurfaceDrift**. Built with high-performance asynchronous **FastAPI**, an interactive dark-cyberpunk SPA frontend, and Server-Sent Events (SSE) real-time streaming telemetry.
 
-**This folder is intended to live inside your complete AttackSurfaceMapper repository.** It does not replace ASM's existing `modules/`, `resources/`, or provider integrations.
+Hosted in production on Vercel at **[https://surface-drift.vercel.app/scan](https://surface-drift.vercel.app/scan)**.
 
-## What it does
+---
 
-- Landing page with understated moving light, orbital lines, and scroll reveals.
-- Scan screen accepting a domain, website URL, or public IPv4 address.
-- Explicit authorization confirmation; the web interface launches ASM with passive/stealth mode enabled by default (`-sth`).
-- Live progress state, detected stage, elapsed time, and recent scanner output.
-- Summary counts calculated from the result files ASM actually wrote.
-- Downloadable ZIP containing the original output files, plus `ASM_Scan_Summary.txt` and `ASM_Scan_Summary.json`.
-- Unique per-run output folders and ZIP names so a subsequent scan does not overwrite earlier artifacts.
+## Architecture Overview
 
-## Install in the ASM repository
+```
+                      ┌──────────────────────────────────────────────┐
+                      │    Browser Client (Vanilla ES6 SPA)          │
+                      │    • Terminal Telemetry Parser               │
+                      │    • Attack Path Graph (Canvas/SVG)          │
+                      │    • MITRE ATT&CK Matrix Interactive View    │
+                      │    • Surface Drift Baseline Comparison       │
+                      └──────────────────────┬───────────────────────┘
+                                             │ HTTP REST / SSE Stream
+                                             ▼
+                      ┌──────────────────────────────────────────────┐
+                      │    FastAPI Application (server.py)           │
+                      │    • Session & Auth (Google OAuth + FastAuth)│
+                      │    • Ephemeral & Cloud Database Persistence  │
+                      │    • Vercel Serverless Detection             │
+                      └──────────────┬───────────────────────────────┘
+                                     │
+           ┌─────────────────────────┴────────────────────────┐
+           ▼                                                  ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────────────┐
+│ Phase 1: High-Speed Native Recon     │  │ Phase 2: CTEM Pipeline Runner        │
+│ (surfacedrift/passive_osint.py)      │  │ (surfacedrift/advanced_runner.py)    │
+│ • Parallel crt.sh, HackerTarget, OTX │  │ • 15 Deep Vulnerability Audits       │
+│ • 3.5s Circuit Breakers (~2.2s total)│  │ • MITRE Matrix Mapping Engine        │
+│ • Async DNS & Port Bounding          │  │ • Multi-Hop Attack Path Generator    │
+└──────────────────────────────────────┘  │ • Surface Drift Delta Engine         │
+                                          │ • Gemini AI Threat Summarizer        │
+                                          └──────────────────────────────────────┘
+```
 
-Expected layout:
+---
+
+## Directory Structure
 
 ```text
-AttackSurfaceMapper/
-├── asm.py
-├── modules/
-├── resources/
-├── keylist.asm                 # optional; created empty if absent
-└── asm-web-ui/
-    ├── server.py
-    ├── requirements.txt
-    └── static/
-        ├── index.html
-        ├── styles.css
-        └── app.js
+asm-web-ui/
+├── server.py                  # FastAPI application, authentication, scan coordinator & SSE routes
+├── database.py                # SQLite / PostgreSQL persistence for scans, history, and user profiles
+├── requirements.txt           # Python dependencies for the web server and CTEM modules
+├── vercel.json                # Serverless deployment configuration (maxDuration: 60)
+├── static/                    # Frontend client assets
+│   ├── index.html             # Single-page interface with 15-module grid, terminals, & gauges
+│   ├── app.js                 # State machine, SSE streaming parser, attack graph, & fast auth
+│   └── styles.css             # Dark cyberpunk styles, glow gauges, & terminal telemetry
+└── surfacedrift/              # CTEM Deep Exposure Assessment Modules
+    ├── advanced_runner.py     # Central pipeline runner & SSE stream generator
+    ├── passive_osint.py       # Parallel async OSINT engine with 3.5s circuit breakers
+    ├── http_probing.py        # Asynchronous HTTP probing & tech stack fingerprinting
+    ├── takeover.py            # 14-signature CNAME cloud takeover auditor
+    ├── cloud_auditor.py       # S3, Azure Blob, GCP bucket permission & permutation tester
+    ├── waf_origin.py          # Direct origin IP detection & WAF bypass hunter
+    ├── cdn_detector.py        # BGP ASN & CDN reverse-proxy identifier
+    ├── epss_kev.py            # FIRST.org EPSS & CISA KEV real-time threat prioritizer
+    ├── email_security.py      # SPF & DMARC RFC 7208/7489 spoofing posture analyzer
+    ├── secrets_scanner.py     # High-entropy JavaScript client-side secrets extraction
+    ├── api_discovery.py       # Shadow API, OpenAPI/Swagger & GraphQL introspection prober
+    ├── eol_analyzer.py        # End-of-life runtime & dependency audit
+    ├── blh_detector.py        # Broken Link Hijacking (BLH) crawler & NXDOMAIN auditor
+    ├── config_prober.py       # Sensitive configuration (/.git, /.env, backups) prober
+    ├── tls_auditor.py         # Async TLS handshake, cipher suite & HSTS compliance prober
+    ├── breach_intel.py        # Leaked credential & corporate identity breach auditor
+    ├── typosquat_monitor.py   # Typosquatting & lookalike phishing domain radar
+    ├── mitre_mapping.py       # MITRE ATT&CK Enterprise Matrix mapping engine
+    ├── attack_graph.py        # Directed multi-hop attack path graph generator
+    ├── drift_engine.py        # Continuous surface drift delta calculation engine
+    ├── remediation_playbooks.py # Actionable fix generation (DNS/AWS/Nginx)
+    ├── risk_scoring.py        # 0-100 composite posture deduction formula & letter grade
+    └── gemini_summarizer.py   # Gemini API & deterministic executive summary generator
 ```
 
-### Windows PowerShell
+---
 
-From the repository root:
+## API Endpoints Reference
 
-```powershell
-python -m pip install -r requirements.txt
-python -m pip install -r asm-web-ui/requirements.txt
-python -m uvicorn server:app --app-dir asm-web-ui --host 127.0.0.1 --port 8000
-```
+### Authentication
+- `GET /api/auth/me` — Returns the authenticated user session or guest profile.
+- `GET /api/auth/google/login` — Initiates Google OAuth 2.0 authorization code flow.
+- `GET /api/auth/google/callback` — Exchanges Google OAuth authorization code for session cookie.
+- `POST /api/auth/fast-auth` — 1-Click instant authentication for demo environments and viva presentations.
+- `POST /api/auth/logout` — Clears active session cookies.
 
-Then open `http://127.0.0.1:8000`.
+### Reconnaissance & Scans
+- `POST /api/scans` — Initiates Phase 1 perimeter reconnaissance. Body: `{"target": "example.com", "mode": "active"|"passive", "authorized": true}`.
+- `GET /api/scans/{scan_id}` — Returns scan progress, discovered assets, open ports, and live logs.
+- `GET /api/scans/history` — Lists historical completed scans for the authenticated user.
+- `DELETE /api/scans/{scan_id}` — Deletes a scan record and associated output artifacts.
 
-If your current repo does not have a root-level `requirements.txt`, install the dependencies your ASM modules need using the project's existing setup instructions, then install the web dependencies:
+### SurfaceDrift CTEM Deep Validation
+- `POST /api/scans/{scan_id}/continue-surfacedrift-stream` — **Core SSE Endpoint**: Streams real-time color-coded CTEM module logs, findings, attack graphs, and final posture report.
+- `POST /api/scans/{scan_id}/continue-surfacedrift` — Synchronous fallback endpoint for non-streaming clients.
+- `GET /api/scans/{scan_id}/surfacedrift` — Retrieves cached Phase 2 CTEM assessment results.
+- `GET /api/scans/{scan_id}/drift` — Computes continuous threat exposure delta ($\Delta$) against prior scans of the same target.
 
-```powershell
-python -m pip install -r asm-web-ui/requirements.txt
-```
+### Exports & Artifacts
+- `GET /api/scans/{scan_id}/download-combined` — Packages all Phase 1 recon text files (`ips.txt`, `subdomains.txt`, `emails.txt`) and Phase 2 CTEM reports (`surfacedrift_advanced_report.json`, `surfacedrift_executive_summary.md`) into a single ZIP archive.
+- `GET /api/scans/{scan_id}/download-advanced-json` — Downloads the raw JSON CTEM assessment payload.
+- `GET /api/scans/{scan_id}/download-summary-md` — Downloads the formatted executive threat summary Markdown document.
 
-You can alternatively run `python asm-web-ui/server.py` from the repository root.
+---
 
-### macOS / Linux
+## Running Locally
 
-```bash
-python3 -m pip install -r requirements.txt
-python3 -m pip install -r asm-web-ui/requirements.txt
-python3 -m uvicorn server:app --app-dir asm-web-ui --host 127.0.0.1 --port 8000
-```
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Scanner compatibility details
+2. **Start the FastAPI server:**
+   ```bash
+   python server.py
+   ```
 
-- The adapter looks for `asm.py`, `modules/`, and compatible wordlists in `resources/`. It tries `top100_sublist.txt`, `bitquark_top100k_sublist.txt`, and `top1000_sublist.txt` for the main wordlist, and `top1000_sublist.txt`, `top100_sublist.txt`, or `bitquark_top100k_sublist.txt` for the child wordlist.
-- The attached source has a bare `exit` expression at the end of `showbanner()`. Since it is not called as `exit()`, it does not terminate execution; the web adapter runs the repository script directly.
-- That attached source also opens `keylist.asm` even when no API keys are configured. If the file is missing, the adapter creates a blank one. Provider-specific features remain disabled until valid keys are configured through ASM's supported configuration. Never put real keys in the frontend or commit them to a public repository.
-- The progress indicator is a best-effort view inferred from the scanner's terminal output; ASM does not currently expose exact numeric progress for each module. The service also limits active scans to one by default (`ASM_MAX_CONCURRENT_SCANS` can change that).
-- The adapter checks for completion and a result-folder marker before offering a report download. It will show an error instead of inventing a successful report if ASM fails.
+3. **Open browser:**
+   Navigate to `http://127.0.0.1:8000`.
 
-## Output locations
+---
 
-- Original scan output: `demo_run/<scan-id>_<timestamp>/...`
-- ZIP archives: `asm-web-ui/artifacts/asm-report-<scan-id>.zip`
+## Vercel Serverless Hosting
 
-The archive includes the result folder, original `.txt` / `.csv` files created by ASM, and the summary files generated by the web adapter. The adapter does not bundle `keylist.asm` into the report.
-
-## API endpoints
-
-- `GET /api/health` — checks whether expected scanner files exist.
-- `POST /api/scans` — starts a scan. JSON body: `{"target":"example.com","authorized":true}`.
-- `GET /api/scans/{scan_id}` — returns progress, logs, status, and report summary.
-- `GET /api/scans/{scan_id}/download` — streams the ZIP archive after completion.
-
-## Important deployment note
-
-This is a local-development MVP. Do **not** expose it as an unauthenticated public service as-is. Before public deployment, put authentication and authorization in front of scan creation and downloads; add per-user rate limits and concurrency limits; run scans in isolated, resource-limited workers; store output in persistent storage; and enforce your approved target scope on the server. The authorization checkbox is a reminder, not proof of permission. The app rejects localhost/private/reserved IPs and runs passive mode by default, but this is not a substitute for production security controls. Treat ZIP reports as sensitive because ASM can collect email details and credential-related artifacts depending on the modules and sources configured.
-
-The included `.env.example` is a reference list only; the server does not automatically load `.env` files. Export those values in your shell or set them in your hosting provider's environment configuration when you need to override the defaults.
+When deployed on Vercel:
+- `api/index.py` handles incoming requests as a serverless ASGI app.
+- File writes are automatically redirected to `/tmp`.
+- Reconnaissance executes synchronously within the active HTTP request context, preventing AWS Lambda container CPU freezing.
+- `maxDuration: 60` provides generous execution time for deep multi-module audits.

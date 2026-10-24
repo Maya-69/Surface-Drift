@@ -79,10 +79,38 @@ To ensure Google Sign-In works seamlessly both in production on Vercel and durin
 In your Vercel dashboard (`Settings` -> `Environment Variables`):
 * `GOOGLE_CLIENT_ID` = `your-client-id.apps.googleusercontent.com`
 * `GOOGLE_CLIENT_SECRET` = `GOCSPX-your-secret`
+* `GEMINI_API_KEY` = `your-google-ai-studio-api-key` (Optional for AI Threat Summary)
+
+### 1-Click Fast Auth Fallback
+If you do not configure custom Google OAuth credentials in Vercel, SurfaceDrift features a built-in **1-Click Fast Auth** modal:
+- Clicking "1-Click Fast Auth" logs you in directly as `sawantmayuresh2006@gmail.com`.
+- The authenticated JWT token is cached in the browser's `localStorage` and sent with subsequent requests.
+- This unlocks the full 15-module CTEM suite immediately without requiring Google Cloud Console setup.
 
 ---
 
-## 5. Security & Access Model: Guest vs. Authenticated
+## 5. Serverless Execution Lifecycle & The 38% Freeze Solution
+
+Running deep cybersecurity reconnaissance inside serverless micro-containers requires specialized design patterns due to container constraints:
+
+### 1. The Serverless Lifecycle Problem
+- In traditional virtual machines (FastAPI running under Uvicorn), `create_scan` returns `HTTP 202` and spawns a background thread that runs indefinitely.
+- In serverless micro-containers (AWS Lambda / Vercel), **CPU execution freezes as soon as the HTTP response terminates**. Background threads are paused mid-flight.
+- When querying external OSINT APIs (like HackerTarget) sequentially from datacenter IPs without browser headers, HackerTarget's anti-bot system holds the TCP connection open indefinitely (a tarpit).
+- This caused scans to freeze indefinitely at `38%` on `[-] HackerTarget OSINT: Enumerating hosts and DNS mappings...`.
+
+### 2. The Resilient Architectural Fix
+SurfaceDrift overcomes this through three cloud-native patterns:
+1. **Parallel Circuit-Breaker OSINT (`passive_osint.py`):**
+   `crt.sh`, HackerTarget, and AlienVault are queried concurrently via `asyncio.gather`. Each request is guarded by an explicit **3.5-second timeout** (`asyncio.wait_for`). If any source tarpits or rate-limits, it trips gracefully in 3.5s without blocking the pipeline.
+2. **Synchronous In-Request Execution on Vercel:**
+   When `os.getenv("VERCEL")` is detected, `create_scan` executes Phase 1 reconnaissance synchronously inside the active HTTP request context before returning the response. Because the request remains active, Vercel never suspends the container CPU.
+3. **Extended Serverless Duration (`maxDuration: 60`):**
+   Both `vercel.json` files allocate 60 seconds of execution time, while the optimized parallel engine completes Phase 1 in just **~2.2 seconds**.
+
+---
+
+## 6. Security & Access Model: Guest vs. Authenticated
 
 SurfaceDrift enforces a two-tier access security boundary:
 
@@ -118,7 +146,7 @@ SurfaceDrift enforces a two-tier access security boundary:
 
 ---
 
-## 6. How to Deploy Updates (Continuous Deployment)
+## 7. How to Deploy Updates (Continuous Deployment)
 
 Vercel is hooked directly to your GitHub repository: `https://github.com/Maya-69/Surface-Drift.git`.
 
@@ -142,7 +170,7 @@ git push origin main
 
 ---
 
-## 7. How to Run Locally
+## 8. How to Run Locally
 
 If you want to run SurfaceDrift on your local machine:
 
