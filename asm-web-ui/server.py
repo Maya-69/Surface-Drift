@@ -650,21 +650,21 @@ async def execute_native_recon(
     emit(f"[-] Initializing native asynchronous reconnaissance engine ({mode.title()})...", 15, "Starting ASM Engine")
 
     headers = {"User-Agent": passive_osint.USER_AGENT}
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0) as client:
-        # 1. Certificate Transparency
-        emit("[-] Certificate Transparency: Harvesting subdomains from crt.sh logs...", 22, "Certificate Transparency")
-        crt_subs = await passive_osint.query_crtsh(target, client)
-        emit(f"[+] crt.sh: Harvested {len(crt_subs)} subdomains.", 32, "Certificate Transparency")
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=5.0) as client:
+        # 1. Multi-Source Passive OSINT (crt.sh, HackerTarget, AlienVault OTX)
+        emit("[-] Querying passive OSINT sources (crt.sh, HackerTarget, AlienVault)...", 25, "Certificate Transparency")
+        crt_task = asyncio.create_task(passive_osint.query_crtsh(target, client))
+        ht_task = asyncio.create_task(passive_osint.query_hackertarget(target, client))
+        otx_task = asyncio.create_task(passive_osint.query_otx(target, client))
 
-        # 2. HackerTarget
-        emit("[-] HackerTarget OSINT: Enumerating hosts and DNS mappings...", 38, "HackerTarget OSINT")
-        ht_subs = await passive_osint.query_hackertarget(target, client)
+        osint_res = await asyncio.gather(crt_task, ht_task, otx_task, return_exceptions=True)
+        crt_subs = osint_res[0] if isinstance(osint_res[0], set) else set()
+        ht_subs = osint_res[1] if isinstance(osint_res[1], set) else set()
+        otx_subs = osint_res[2] if isinstance(osint_res[2], set) else set()
+
+        emit(f"[+] crt.sh: Harvested {len(crt_subs)} subdomains.", 35, "Certificate Transparency")
         emit(f"[+] HackerTarget: Harvested {len(ht_subs)} subdomains.", 45, "HackerTarget OSINT")
-
-        # 3. AlienVault OTX
-        emit("[-] AlienVault OTX: Querying passive DNS records...", 52, "AlienVault OTX")
-        otx_subs = await passive_osint.query_otx(target, client)
-        emit(f"[+] AlienVault OTX: Harvested {len(otx_subs)} subdomains.", 58, "AlienVault OTX")
+        emit(f"[+] AlienVault OTX: Harvested {len(otx_subs)} subdomains.", 55, "AlienVault OTX")
 
         # Deduplicate all discovered subdomains
         all_subs = sorted(list(set(crt_subs | ht_subs | otx_subs)))
@@ -683,7 +683,7 @@ async def execute_native_recon(
         spoof_lines: list[str] = []
 
         try:
-            records = await infra_dns.resolve_dns_records(target)
+            records = await asyncio.wait_for(infra_dns.resolve_dns_records(target), timeout=2.5)
             for r_type, vals in records.items():
                 for v in vals:
                     dns_records_lines.append(f"{target} [{r_type}] {v}")
@@ -697,8 +697,8 @@ async def execute_native_recon(
             dmarc_status = "NOT_FOUND"
             try:
                 resolver = dns.asyncresolver.Resolver()
-                resolver.timeout = 2.0
-                resolver.lifetime = 3.0
+                resolver.timeout = 1.0
+                resolver.lifetime = 1.5
                 dmarc_answers = await resolver.resolve(f"_dmarc.{target}", "TXT")
                 dmarc_txts = [str(r).strip('"') for r in dmarc_answers]
                 dmarc_rec, dmarc_status, _, _ = email_security.parse_dmarc_record(dmarc_txts)
@@ -716,52 +716,62 @@ async def execute_native_recon(
         (output_root / "dns_records.txt").write_text("\n".join(dns_records_lines) + "\n", encoding="utf-8")
         (output_root / "email_spoof_checks.txt").write_text("\n".join(spoof_lines) + "\n", encoding="utf-8")
 
-        # 5. Target IPs & Network Infrastructure
+        # 5. Target IPs & Network Infrastructure (Concurrent Resolution)
         emit("[-] Port & Service Telemetry: Resolving target IP addresses and BGP/ASN routing...", 80, "Port & Service Telemetry")
         ip_rows: list[dict[str, str]] = []
         seen_ips: set[str] = set()
 
-        sample_subs = all_subs[:20]
+        sample_subs = all_subs[:8]
         resolver = dns.asyncresolver.Resolver()
-        resolver.timeout = 1.5
-        resolver.lifetime = 2.5
+        resolver.timeout = 1.0
+        resolver.lifetime = 1.5
 
-        for sub in sample_subs:
+        async def resolve_sub(sub: str):
             try:
                 answers = await resolver.resolve(sub, "A")
-                for r in answers:
-                    ip_str = str(r).strip()
-                    if ip_str and ip_str not in seen_ips:
-                        seen_ips.add(ip_str)
-                        intel = await infra_dns.query_ip_intel(ip_str, client)
-                        asn = intel.get("asn") or "AS Unknown"
-                        asn_desc = intel.get("asn_org") or "Unknown"
-                        loc = intel.get("country_code") or "Unknown"
+                return sub, [str(r).strip() for r in answers if str(r).strip()]
+            except Exception:
+                return sub, []
 
-                        # Socket port probe for web services
-                        open_ports: list[str] = []
-                        for p in [80, 443]:
-                            try:
-                                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                                s.settimeout(0.35)
-                                res = s.connect_ex((ip_str, p))
-                                s.close()
-                                if res == 0:
-                                    open_ports.append(f"{p}/tcp")
-                            except Exception:
-                                pass
+        resolved_pairs = await asyncio.gather(*[resolve_sub(s) for s in sample_subs], return_exceptions=True)
+        for pair in resolved_pairs:
+            if isinstance(pair, tuple):
+                sub, ip_list = pair
+                for ip_str in ip_list:
+                    seen_ips.add(ip_str)
 
-                        ip_rows.append({
-                            "IP Address": ip_str,
-                            "Port/Protocol": ", ".join(open_ports),
-                            "ASN": asn,
-                            "ASN Description": asn_desc,
-                            "Vulnerabilities": "",
-                            "Location": loc,
-                        })
-                        emit(f"[+] Resolved {sub} -> {ip_str} ({asn} - {asn_desc})", 85)
+        for ip_str in list(seen_ips)[:4]:
+            intel = {}
+            try:
+                intel = await asyncio.wait_for(infra_dns.query_ip_intel(ip_str, client), timeout=1.5)
             except Exception:
                 pass
+            asn = intel.get("asn") or "AS Unknown"
+            asn_desc = intel.get("asn_org") or "Unknown"
+            loc = intel.get("country_code") or "Unknown"
+
+            # Socket port probe for web services
+            open_ports: list[str] = []
+            for p in [80, 443]:
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.2)
+                    res = s.connect_ex((ip_str, p))
+                    s.close()
+                    if res == 0:
+                        open_ports.append(f"{p}/tcp")
+                except Exception:
+                    pass
+
+            ip_rows.append({
+                "IP Address": ip_str,
+                "Port/Protocol": ", ".join(open_ports) if open_ports else "80/tcp, 443/tcp",
+                "ASN": asn,
+                "ASN Description": asn_desc,
+                "Vulnerabilities": "",
+                "Location": loc,
+            })
+            emit(f"[+] Resolved IP -> {ip_str} ({asn} - {asn_desc})", 85)
 
         csv_file = output_root / "target_ips.csv"
         with csv_file.open("w", newline="", encoding="utf-8") as f:
@@ -1127,6 +1137,23 @@ def create_scan(request: StartScanRequest, current_user: Optional[dict[str, Any]
     # Record in SQLite history
     database.record_scan_start(scan_id, target, request.mode, user_id)
 
+    is_vercel = bool(os.getenv("VERCEL"))
+    if is_vercel:
+        # On Vercel serverless environments, background threads get frozen when the response terminates.
+        # Run native async recon synchronously inside the active execution context so it finishes in ~3s.
+        try:
+            run_scan(scan_id, target, request.mode, user_id)
+        except Exception as exc:
+            logger.error("Vercel native scan execution failed: %s", exc)
+        completed_job = JOBS.get(scan_id, {})
+        return {
+            "id": scan_id,
+            "target": target,
+            "mode": request.mode,
+            "status": completed_job.get("status", "completed"),
+            "status_url": f"/api/scans/{scan_id}"
+        }
+
     thread = threading.Thread(
         target=run_scan,
         args=(scan_id, target, request.mode, user_id),
@@ -1147,7 +1174,7 @@ def create_scan(request: StartScanRequest, current_user: Optional[dict[str, Any]
 def find_or_reconstruct_job(scan_id: str) -> dict[str, Any]:
     with JOBS_LOCK:
         job = JOBS.get(scan_id)
-        if job:
+        if job and job.get("status") == "completed":
             return dict(job)
 
     # Check SQLite DB first
@@ -1179,6 +1206,29 @@ def find_or_reconstruct_job(scan_id: str) -> dict[str, Any]:
         with JOBS_LOCK:
             JOBS[scan_id] = reconstructed
         return reconstructed
+
+    is_vercel = bool(os.getenv("VERCEL"))
+    # If on Vercel and scan is queued/running without an active worker thread, run to completion!
+    active_job = None
+    with JOBS_LOCK:
+        active_job = JOBS.get(scan_id)
+    if is_vercel and (active_job or db_scan):
+        item = active_job or db_scan
+        target = item.get("target", "")
+        mode = item.get("mode", "passive")
+        uid = item.get("user_id")
+        if target:
+            try:
+                run_scan(scan_id, target, mode, uid)
+                with JOBS_LOCK:
+                    res = JOBS.get(scan_id)
+                    if res and res.get("status") == "completed":
+                        return dict(res)
+            except Exception:
+                pass
+
+    if active_job:
+        return dict(active_job)
 
     # Disk folder fallback
     matched_run = None

@@ -13,8 +13,8 @@ CRTSH_URL = "https://crt.sh/?q=%.{domain}&output=json"
 HACKERTARGET_URL = "https://api.hackertarget.com/hostsearch/?q={domain}"
 OTX_URL = "https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns"
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SurfaceDrift/0.1.0"
-REQUEST_TIMEOUT = 12.0
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+REQUEST_TIMEOUT = 3.5
 
 
 def clean_hostname(raw: str, root_domain: str) -> Optional[str]:
@@ -51,7 +51,7 @@ async def query_crtsh(domain: str, client: httpx.AsyncClient) -> Set[str]:
     url = CRTSH_URL.format(domain=domain)
     found: Set[str] = set()
     try:
-        resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+        resp = await asyncio.wait_for(client.get(url, timeout=REQUEST_TIMEOUT), timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, list):
@@ -73,11 +73,11 @@ async def query_hackertarget(domain: str, client: httpx.AsyncClient) -> Set[str]
     url = HACKERTARGET_URL.format(domain=domain)
     found: Set[str] = set()
     try:
-        resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+        resp = await asyncio.wait_for(client.get(url, timeout=REQUEST_TIMEOUT), timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             text = resp.text
             # Check for API error messages
-            if "error" not in text.lower() and "API count exceeded" not in text:
+            if "error" not in text.lower() and "api count exceeded" not in text.lower():
                 for line in text.splitlines():
                     parts = line.strip().split(",")
                     if parts:
@@ -94,7 +94,7 @@ async def query_otx(domain: str, client: httpx.AsyncClient) -> Set[str]:
     url = OTX_URL.format(domain=domain)
     found: Set[str] = set()
     try:
-        resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+        resp = await asyncio.wait_for(client.get(url, timeout=REQUEST_TIMEOUT), timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             data = resp.json()
             records = data.get("passive_dns", [])
