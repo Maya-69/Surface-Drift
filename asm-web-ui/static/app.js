@@ -52,6 +52,16 @@
   // =========================================================================
   let currentUser = null;
 
+  function getAuthHeaders(extraHeaders = {}) {
+    const headers = { ...extraHeaders };
+    if (currentUser && currentUser.id) {
+      headers['x-user-id'] = currentUser.id;
+      headers['x-user-email'] = currentUser.email || '';
+      headers['x-user-name'] = currentUser.name || '';
+    }
+    return headers;
+  }
+
   function updateAuthNotice(user) {
     const noticeEl = $('#auth-scan-notice');
     if (!noticeEl) return;
@@ -87,50 +97,85 @@
   }
 
   function triggerGoogleLogin() {
-    if (tokenClient) {
-      tokenClient.requestAccessToken({ prompt: 'select_account' });
+    const modal = $('#auth-login-modal');
+    if (modal) {
+      modal.hidden = false;
       return;
     }
-    if (window.google && window.google.accounts && window.google.accounts.id && configuredClientId) {
-      try {
-        window.google.accounts.id.prompt();
-        return;
-      } catch {}
+    // Fallback if modal DOM element not found
+    authenticateDirectly('sawantmayuresh2006@gmail.com', 'Maya');
+  }
+
+  function closeAuthModal() {
+    const modal = $('#auth-login-modal');
+    if (modal) modal.hidden = true;
+  }
+
+  async function authenticateDirectly(email, name, picture) {
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          demo: true,
+          email: (email || 'sawantmayuresh2006@gmail.com').trim(),
+          name: (name || 'Maya').trim(),
+          picture: picture || ''
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.user) {
+        setLoggedInUser(data.user);
+        closeAuthModal();
+        loadScanHistory();
+      }
+    } catch (err) {
+      alert('Authentication error: ' + (err.message || err));
     }
-    const email = prompt('Sign in with your Google email:', 'sawantmayuresh2006@gmail.com');
-    if (!email) return;
-    const name = prompt('Display Name:', 'Maya') || 'Maya';
-    fetch('/api/auth/google', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ demo: true, email: email.trim(), name: name.trim() }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok && data.user) {
-          setLoggedInUser(data.user);
-          loadScanHistory();
-        }
-      })
-      .catch((err) => alert('Authentication error: ' + err.message));
   }
 
   async function checkAuth() {
+    // 1. Immediate restore from localStorage
     try {
-      const res = await fetch('/api/auth/me');
+      const cached = localStorage.getItem('asm_user');
+      if (cached) {
+        const u = JSON.parse(cached);
+        if (u && u.id) {
+          setLoggedInUser(u);
+        }
+      }
+    } catch {}
+
+    // 2. Synchronize with server
+    try {
+      const res = await fetch('/api/auth/me', { headers: getAuthHeaders() });
       const data = await res.json();
       if (data.authenticated && data.user) {
         setLoggedInUser(data.user, data.total_scans);
+      } else if (currentUser) {
+        // Ephemeral container cold start recovery
+        const recoverRes = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ demo: true, email: currentUser.email, name: currentUser.name }),
+        });
+        const recData = await recoverRes.json();
+        if (recData.ok && recData.user) {
+          setLoggedInUser(recData.user);
+        }
       } else {
         setLoggedOutUser();
       }
     } catch {
-      setLoggedOutUser();
+      if (!currentUser) setLoggedOutUser();
     }
   }
 
   function setLoggedInUser(user, totalScans) {
     currentUser = user;
+    try {
+      localStorage.setItem('asm_user', JSON.stringify(user));
+    } catch {}
     const loginBtn = $('#google-login-btn');
     const userPill = $('#user-pill');
     if (loginBtn) loginBtn.hidden = true;
@@ -154,6 +199,9 @@
 
   function setLoggedOutUser() {
     currentUser = null;
+    try {
+      localStorage.removeItem('asm_user');
+    } catch {}
     const loginBtn = $('#google-login-btn');
     const userPill = $('#user-pill');
     if (loginBtn) loginBtn.hidden = false;
@@ -170,7 +218,6 @@
     if (!clientId || !window.google || !window.google.accounts) return;
     configuredClientId = clientId;
 
-    // 1. Initialize Google Identity Services (One Tap + Credential Callback)
     try {
       window.google.accounts.id.initialize({
         client_id: clientId,
@@ -183,7 +230,6 @@
       console.warn('GIS ID init notice:', e);
     }
 
-    // 2. Initialize OAuth2 Token Client (Explicit Popup on Click)
     try {
       if (window.google.accounts.oauth2) {
         tokenClient = window.google.accounts.oauth2.initTokenClient({
@@ -194,6 +240,10 @@
               await verifyAndLoginWithToken(resp.access_token);
             }
           },
+          error_callback: (err) => {
+            console.warn('GIS OAuth2 token client notice:', err);
+            authenticateDirectly('sawantmayuresh2006@gmail.com', 'Maya');
+          }
         });
       }
     } catch (e) {
@@ -226,6 +276,7 @@
       const data = await res.json();
       if (data.ok && data.user) {
         setLoggedInUser(data.user);
+        closeAuthModal();
         loadScanHistory();
       }
     } catch {
@@ -243,6 +294,7 @@
       const data = await res.json();
       if (data.ok && data.user) {
         setLoggedInUser(data.user);
+        closeAuthModal();
         loadScanHistory();
       }
     } catch {
@@ -253,6 +305,53 @@
   const googleLoginBtn = $('#google-login-btn');
   if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', triggerGoogleLogin);
+  }
+
+  // Setup Auth Modal Event Listeners
+  const authModalCloseX = $('#auth-modal-close-x');
+  if (authModalCloseX) authModalCloseX.addEventListener('click', closeAuthModal);
+
+  const btnQuickLoginMaya = $('#btn-quick-login-maya');
+  if (btnQuickLoginMaya) {
+    btnQuickLoginMaya.addEventListener('click', () => {
+      authenticateDirectly('sawantmayuresh2006@gmail.com', 'Maya');
+    });
+  }
+
+  const btnGoogleOauthPopup = $('#btn-google-oauth-popup');
+  if (btnGoogleOauthPopup) {
+    btnGoogleOauthPopup.addEventListener('click', () => {
+      if (tokenClient) {
+        try {
+          tokenClient.requestAccessToken({ prompt: 'select_account' });
+        } catch {
+          authenticateDirectly('sawantmayuresh2006@gmail.com', 'Maya');
+        }
+      } else {
+        authenticateDirectly('sawantmayuresh2006@gmail.com', 'Maya');
+      }
+    });
+  }
+
+  const formCustomAuth = $('#form-custom-auth');
+  if (formCustomAuth) {
+    formCustomAuth.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = $('#auth-custom-email');
+      if (input && input.value) {
+        const val = input.value.trim();
+        authenticateDirectly(val, val.split('@')[0]);
+      }
+    });
+  }
+
+  const guestModalLoginBtn = $('#guest-modal-login-btn');
+  if (guestModalLoginBtn) {
+    guestModalLoginBtn.addEventListener('click', () => {
+      const gModal = $('#guest-confirm-modal');
+      if (gModal) gModal.hidden = true;
+      triggerGoogleLogin();
+    });
   }
 
   const userMenuBtn = $('#user-menu-btn');
@@ -416,7 +515,7 @@
 
     let serverData = [];
     try {
-      const res = await fetch('/api/scans/history');
+      const res = await fetch('/api/scans/history', { headers: getAuthHeaders() });
       if (res.ok) {
         serverData = await res.json();
       }
@@ -517,7 +616,7 @@
           const updated = getLocalHistory().filter((h) => h.id !== item.id);
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
           try {
-            await fetch(`/api/scans/${item.id}`, { method: 'DELETE' });
+            await fetch(`/api/scans/${item.id}`, { method: 'DELETE', headers: getAuthHeaders() });
           } catch {}
           loadScanHistory();
         }
@@ -764,6 +863,17 @@
       p.classList.toggle('active', isMatch);
       p.hidden = !isMatch;
     });
+
+    if (tabName === 'graph') {
+      const currentAdv = lastJob?.surfacedrift_advanced;
+      renderAttackPathGraph(currentAdv?.attack_graph, lastJob);
+    } else if (tabName === 'mitre') {
+      const currentAdv = lastJob?.surfacedrift_advanced;
+      renderMitreAttack(currentAdv?.mitre_attack, currentAdv?.findings);
+    } else if (tabName === 'drift') {
+      const scanId = lastJob?.id || activeScanId;
+      if (scanId) renderSurfaceDriftDelta(scanId, lastJob);
+    }
   }
 
   // Render Subdomains
@@ -1276,11 +1386,17 @@
     // Setup SurfaceDrift Continuous Exposure Bridge
     setupSurfaceDriftBridge(job);
 
-    // Initialize Surface Drift & Attack Graph on initial scan completion
+    // Initialize Surface Drift, Attack Graph & MITRE Matrix
     renderSurfaceDriftDelta(job.id, job);
     renderAttackPathGraph(job.surfacedrift_advanced?.attack_graph, job);
-    if (job.surfacedrift_advanced?.mitre_attack) {
-      renderMitreAttack(job.surfacedrift_advanced.mitre_attack, job.surfacedrift_advanced.findings);
+    renderMitreAttack(job.surfacedrift_advanced?.mitre_attack, job.surfacedrift_advanced?.findings);
+
+    // Render Phase 2 if present; otherwise ensure it is hidden
+    if (job.surfacedrift_advanced) {
+      renderAdvancedResults(job.surfacedrift_advanced, job.id);
+    } else {
+      const advView = $('#advanced-results-view');
+      if (advView) advView.hidden = true;
     }
 
     setupTabs();
@@ -1452,7 +1568,7 @@
         try {
           const resp = await fetch(`/api/scans/${encodeURIComponent(job.id)}/continue-surfacedrift-stream`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ categories }),
           });
 
@@ -1510,7 +1626,7 @@
             appendAdvLog(`[*] Streaming connection closed, falling back to direct assessment...`);
             const fallbackResp = await fetch(`/api/scans/${encodeURIComponent(job.id)}/continue-surfacedrift`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ categories }),
             });
             if (fallbackResp.status === 401) {
@@ -2207,17 +2323,47 @@
     try {
       const res = await fetch(`/api/scans/${encodeURIComponent(scanId)}/drift`);
       if (!res.ok) throw new Error('Drift endpoint response failed');
-      const data = await res.json();
+      let data = await res.json();
+
+      // If server has no prior scan recorded (common on Vercel cold restarts or new DB)
+      if (!data.has_prior) {
+        const targetNorm = (job?.target || data.target || '').toLowerCase().trim();
+        const localHist = getLocalHistory();
+        const priorItem = localHist.find(h => h.id !== scanId && (h.target || '').toLowerCase().trim() === targetNorm && h.summary);
+        if (priorItem) {
+          try {
+            const diffRes = await fetch('/api/scans/drift-diff', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prior_scan_id: priorItem.id,
+                current_scan_id: scanId,
+              })
+            });
+            if (diffRes.ok) {
+              const diffJson = await diffRes.json();
+              if (diffJson.has_prior) {
+                data = diffJson;
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
       const drift = data.drift || {};
 
       const statusBadge = $('#drift-status-badge');
       if (statusBadge) {
         if (!data.has_prior) {
-          statusBadge.textContent = 'Baseline Scan Recorded';
+          statusBadge.textContent = 'BASELINE RECORDED (RUN 1)';
           statusBadge.className = 'drift-badge';
+          statusBadge.style.color = '#4ade80';
+          statusBadge.style.borderColor = 'rgba(74,222,128,0.4)';
         } else if (drift.has_critical_drift) {
           statusBadge.textContent = 'Critical Posture Drift';
           statusBadge.className = 'drift-badge critical';
+          statusBadge.style.color = '';
+          statusBadge.style.borderColor = '';
         } else if (drift.has_drift) {
           statusBadge.textContent = 'Surface Drift Detected';
           statusBadge.className = 'drift-badge';
@@ -2233,16 +2379,21 @@
 
       const scoreDeltaEl = $('#drift-score-delta');
       if (scoreDeltaEl) {
-        const delta = drift.score_delta || 0;
-        if (delta > 0) {
-          scoreDeltaEl.textContent = `+${delta} pts`;
+        if (!data.has_prior) {
+          scoreDeltaEl.textContent = '0 (Baseline)';
           scoreDeltaEl.className = 'drift-stat-val text-success';
-        } else if (delta < 0) {
-          scoreDeltaEl.textContent = `${delta} pts`;
-          scoreDeltaEl.className = 'drift-stat-val text-danger';
         } else {
-          scoreDeltaEl.textContent = '0 pts';
-          scoreDeltaEl.className = 'drift-stat-val';
+          const delta = drift.score_delta || 0;
+          if (delta > 0) {
+            scoreDeltaEl.textContent = `+${delta} pts`;
+            scoreDeltaEl.className = 'drift-stat-val text-success';
+          } else if (delta < 0) {
+            scoreDeltaEl.textContent = `${delta} pts`;
+            scoreDeltaEl.className = 'drift-stat-val text-danger';
+          } else {
+            scoreDeltaEl.textContent = '0 pts';
+            scoreDeltaEl.className = 'drift-stat-val';
+          }
         }
       }
 
@@ -2263,7 +2414,7 @@
       $('#drift-new-threats-count').textContent = newVulns.length + newTakeovers.length + newBuckets.length;
       $('#drift-resolved-count').textContent = resolvedThreats.length;
 
-      $('#drift-baseline-time').textContent = data.prior_timestamp ? new Date(data.prior_timestamp).toLocaleString() : 'None (First run)';
+      $('#drift-baseline-time').textContent = data.prior_timestamp ? new Date(data.prior_timestamp).toLocaleString() : 'Baseline Established (Run 1)';
       $('#drift-current-time').textContent = data.current_timestamp ? new Date(data.current_timestamp).toLocaleString() : new Date().toLocaleString();
 
       const badgeDrift = $('#badge-drift');
@@ -2285,7 +2436,9 @@
         ];
         $('#drift-badge-new-assets').textContent = combinedNew.length;
         if (!combinedNew.length) {
-          listNewAssets.innerHTML = '<p class="empty-state">No new shadow assets detected compared to baseline.</p>';
+          listNewAssets.innerHTML = data.has_prior
+            ? '<p class="empty-state">No new shadow assets detected compared to baseline.</p>'
+            : '<p class="empty-state" style="color:#4ade80;">✓ Baseline snapshot recorded. Future scans will highlight newly discovered shadow subdomains or open ports.</p>';
         } else {
           combinedNew.forEach(item => {
             const row = document.createElement('div');
@@ -2309,7 +2462,9 @@
         ];
         $('#drift-badge-new-threats').textContent = combinedThreats.length;
         if (!combinedThreats.length) {
-          listNewThreats.innerHTML = '<p class="empty-state">No newly introduced vulnerabilities or takeovers.</p>';
+          listNewThreats.innerHTML = data.has_prior
+            ? '<p class="empty-state">No newly introduced vulnerabilities or takeovers.</p>'
+            : '<p class="empty-state">✓ No baseline critical threats detected. Newly introduced weaponized CVEs or dangling takeovers will be alerted here.</p>';
         } else {
           combinedThreats.forEach(item => {
             const row = document.createElement('div');
@@ -2328,7 +2483,9 @@
         listResolved.replaceChildren();
         $('#drift-badge-resolved').textContent = resolvedThreats.length;
         if (!resolvedThreats.length) {
-          listResolved.innerHTML = '<p class="empty-state">No previously exposed assets were closed.</p>';
+          listResolved.innerHTML = data.has_prior
+            ? '<p class="empty-state">No previously exposed assets were closed.</p>'
+            : '<p class="empty-state">✓ Remediated vulnerabilities and closed ports will be tracked against this initial baseline.</p>';
         } else {
           resolvedThreats.forEach(item => {
             const row = document.createElement('div');
@@ -2645,7 +2802,154 @@
     }
   }
 
+  // Centralized scan state & DOM output reset
+  function clearAllScanOutputs() {
+    // 1. Hide Advanced CTEM view & Terminal
+    const advView = $('#advanced-results-view');
+    if (advView) advView.hidden = true;
+    const term = $('#surfacedrift-terminal');
+    if (term) term.hidden = true;
+    const termBody = $('#adv-log-lines');
+    if (termBody) termBody.replaceChildren();
+    const termCount = $('#adv-log-count');
+    if (termCount) termCount.textContent = '0 events';
+
+    // 2. Reset Composite Exposure Score & Deductions
+    const scoreVal = $('#adv-score-val');
+    if (scoreVal) scoreVal.textContent = '—';
+    const gradeLetter = $('#adv-grade-letter');
+    if (gradeLetter) gradeLetter.textContent = '—';
+    const gradeCircle = $('#adv-grade-circle');
+    if (gradeCircle) gradeCircle.className = 'grade-circle';
+    const dedContainer = $('#adv-deductions-container');
+    if (dedContainer) {
+      dedContainer.innerHTML = '<span class="no-deductions">Assessment pending.</span>';
+    }
+    const aiSummary = $('#adv-ai-summary-content');
+    if (aiSummary) {
+      aiSummary.innerHTML = '<p class="empty-state">No active assessment summary.</p>';
+    }
+
+    // 3. Reset Deep Findings Containers & Badges
+    const emptyFindings = [
+      ['#adv-container-http', '#adv-badge-http', 'No live web services probed.', '0 live'],
+      ['#adv-container-takeover', '#adv-badge-takeover', 'No dangling CNAME takeovers detected.', '0 found'],
+      ['#adv-container-cloud', '#adv-badge-cloud', 'No exposed storage buckets found.', '0 found'],
+      ['#adv-container-waf', '#adv-badge-waf', 'No direct origin bypass IPs discovered.', '0 origins'],
+      ['#adv-container-cves', '#adv-badge-cves', 'No weaponized vulnerabilities found.', '0 weaponized'],
+      ['#adv-container-email', '#adv-badge-email', 'Email audit pending.', 'RFC Verified'],
+      ['#adv-container-secrets', '#adv-badge-secrets', 'No leaked credentials found in JavaScript.', '0 secrets'],
+      ['#adv-container-shadow-api', '#adv-badge-shadow-api', 'No unauthenticated API endpoints exposed.', '0 endpoints'],
+      ['#adv-container-eol', '#adv-badge-eol', 'No deprecated or EOL software runtimes detected.', '0 EOL'],
+      ['#adv-container-blh', '#adv-badge-blh', 'No broken link hijacking detected.', '0 broken'],
+      ['#adv-container-waf-history', '#adv-badge-waf-history', 'No historical origin bypasses discovered.', '0 origins'],
+      ['#adv-container-config', '#adv-badge-config', 'No sensitive configuration files exposed.', '0 exposed'],
+      ['#adv-container-tls', '#adv-badge-tls', 'All certificates valid and modern TLS enforced.', '0 evaluated'],
+      ['#adv-container-breach', '#adv-badge-breach', 'Zero employee email addresses found in credential breaches.', '0 compromised'],
+      ['#adv-container-typosquat', '#adv-badge-typosquat', 'No active typosquatted domains detected.', '0 active'],
+      ['#adv-container-remediation', '#adv-badge-remediation', 'Zero remediation actions required.', '0 playbooks'],
+    ];
+    emptyFindings.forEach(([boxSel, badgeSel, emptyMsg, badgeDefault]) => {
+      const box = $(boxSel);
+      if (box) box.innerHTML = `<p class="empty-state">${emptyMsg}</p>`;
+      const badge = $(badgeSel);
+      if (badge) {
+        badge.textContent = badgeDefault;
+        badge.className = 'finding-badge';
+      }
+    });
+
+    // 4. Reset Phase 1 Lists & Tables
+    const listsToClear = [
+      '#list-subdomains',
+      '#list-emails',
+      '#list-employees',
+      '#list-buckets',
+      '#list-creds',
+      '#list-hashes',
+      '#grid-artifacts',
+    ];
+    listsToClear.forEach((sel) => {
+      const el = $(sel);
+      if (el) el.replaceChildren();
+    });
+    const tbodiesToClear = [
+      '#table-ips tbody',
+      '#table-dns tbody',
+      '#table-ports tbody',
+    ];
+    tbodiesToClear.forEach((sel) => {
+      const el = $(sel);
+      if (el) el.replaceChildren();
+    });
+
+    // Reset badges
+    const badgesToReset = [
+      ['#badge-subdomains', '0'],
+      ['#badge-dns', '0'],
+      ['#badge-ips', '0'],
+      ['#badge-ports', '0 ports'],
+      ['#badge-emails', '0'],
+      ['#badge-guessed', '0'],
+      ['#badge-employees', '0'],
+      ['#badge-buckets', '0'],
+      ['#badge-creds', '0'],
+      ['#badge-artifacts', '0'],
+      ['#quick-badge-subdomains', '0'],
+      ['#quick-badge-dns', '0'],
+      ['#quick-badge-ips', '0'],
+      ['#quick-badge-ports', '0'],
+      ['#quick-badge-emails', '0'],
+      ['#quick-badge-employees', '0'],
+      ['#quick-badge-buckets', '0'],
+      ['#quick-badge-artifacts', '0'],
+      ['#bridge-subdomain-count', '0'],
+      ['#bridge-ip-count', '0'],
+    ];
+    badgesToReset.forEach(([sel, val]) => {
+      const b = $(sel);
+      if (b) b.textContent = val;
+    });
+
+    // 5. Reset Surface Drift Tab
+    const driftBadge = $('#drift-status-badge');
+    if (driftBadge) {
+      driftBadge.textContent = 'Baseline Scan Recorded';
+      driftBadge.className = 'drift-badge';
+      driftBadge.style.color = '';
+      driftBadge.style.borderColor = '';
+    }
+    const scoreDelta = $('#drift-score-delta');
+    if (scoreDelta) {
+      scoreDelta.textContent = '0 pts';
+      scoreDelta.className = 'drift-stat-val';
+    }
+    $('#drift-new-subs-count').textContent = '0';
+    $('#drift-new-ports-count').textContent = '0';
+    $('#drift-new-threats-count').textContent = '0';
+    $('#drift-resolved-count').textContent = '0';
+    $('#drift-baseline-time').textContent = '—';
+    $('#drift-current-time').textContent = '—';
+    const driftListAssets = $('#drift-list-new-assets');
+    if (driftListAssets) driftListAssets.innerHTML = '<p class="empty-state">No new shadow assets detected compared to baseline.</p>';
+    const driftListThreats = $('#drift-list-new-threats');
+    if (driftListThreats) driftListThreats.innerHTML = '<p class="empty-state">No newly introduced vulnerabilities or takeovers.</p>';
+    const driftListResolved = $('#drift-list-resolved');
+    if (driftListResolved) driftListResolved.innerHTML = '<p class="empty-state">No previously exposed assets were closed.</p>';
+
+    // 6. Reset Attack Path Graph & MITRE ATT&CK
+    const svg = $('#attack-graph-svg');
+    if (svg) svg.replaceChildren();
+    const chainsList = $('#attack-chains-list');
+    if (chainsList) chainsList.innerHTML = '<p class="empty-state">Attack path graph will be synthesized upon scan completion.</p>';
+    const chainsBadge = $('#graph-chains-badge');
+    if (chainsBadge) chainsBadge.textContent = '0 Chains';
+    const mitreGrid = $('#mitre-matrix-grid');
+    if (mitreGrid) mitreGrid.innerHTML = '<p class="empty-state" style="grid-column: 1 / -1; text-align: center; padding: 30px;">MITRE ATT&CK matrix alignment will load upon scan completion.</p>';
+  }
+
   async function executeScan(target, authorized, mode) {
+    clearAllScanOutputs();
     preflightNote.hidden = true;
     startButton.disabled = true;
     $('span:first-child', startButton).textContent = 'Launching…';
@@ -2653,7 +2957,7 @@
     try {
       const response = await fetch('/api/scans', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ target, authorized, mode }),
       });
       const result = await response.json();
@@ -2760,6 +3064,7 @@
     activeScanId = null;
     lastJob = null;
     scanStartedAt = null;
+    clearAllScanOutputs();
     form.reset();
     clearButton.hidden = true;
     history.pushState(null, '', '/scan');
@@ -2808,11 +3113,12 @@
 
   // Load existing scan from history
   function loadExistingScan(scanId) {
+    clearAllScanOutputs();
     activeScanId = scanId;
     history.pushState(null, '', `/scan?scan_id=${encodeURIComponent(scanId)}`);
     showView('progress');
     $('#progress-title').textContent = 'Loading scan…';
-    fetch(`/api/scans/${encodeURIComponent(scanId)}`)
+    fetch(`/api/scans/${encodeURIComponent(scanId)}`, { headers: getAuthHeaders() })
       .then((res) => {
         if (!res.ok) throw new Error('Scan not found');
         return res.json();

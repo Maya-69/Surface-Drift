@@ -155,6 +155,14 @@ def build_drift_snapshot(scan_dict: dict[str, Any]) -> dict[str, Any]:
         cve_id = c.get("cve_id")
         if cve_id:
             vulns.append(cve_id)
+    if not vulns and sections.get("ports_and_vulns"):
+        for item in sections.get("ports_and_vulns") or []:
+            for v in item.get("vulns") or []:
+                if isinstance(v, dict):
+                    vulns.append(v.get("id") or v.get("cve") or "")
+                elif isinstance(v, str):
+                    vulns.append(v)
+    vulns = [v for v in vulns if v]
 
     takeovers = []
     for t in findings.get("subdomain_takeovers", {}).get("items") or []:
@@ -166,6 +174,12 @@ def build_drift_snapshot(scan_dict: dict[str, Any]) -> dict[str, Any]:
     for b in findings.get("cloud_storage", {}).get("buckets") or []:
         if b.get("is_dangerous") or b.get("access_level") in {"PUBLIC_READ", "PUBLIC_WRITE"}:
             public_buckets.append(b.get("bucket_name") or "")
+    if not public_buckets and sections.get("buckets"):
+        for b in sections.get("buckets") or []:
+            if isinstance(b, dict):
+                public_buckets.append(b.get("bucket") or b.get("name") or "")
+            elif isinstance(b, str):
+                public_buckets.append(b)
     public_buckets = [b for b in public_buckets if b]
 
     risk_score = posture.get("score") if posture.get("score") is not None else scan_dict.get("risk_score", 100)
@@ -191,12 +205,24 @@ def utc_now() -> str:
 
 def get_current_user(
     asm_user_id: Optional[str] = Cookie(None),
-    x_user_id: Optional[str] = Header(None)
+    x_user_id: Optional[str] = Header(None),
+    x_user_email: Optional[str] = Header(None),
+    x_user_name: Optional[str] = Header(None),
 ) -> Optional[dict[str, Any]]:
     uid = asm_user_id or x_user_id
-    if uid:
-        return database.get_user_by_id(uid)
-    return None
+    if not uid:
+        return None
+    user = database.get_user_by_id(uid)
+    if user:
+        return user
+    # Container cold start recovery on Vercel:
+    # Ephemeral /tmp database wiped or new container spun up.
+    email = (x_user_email or "sawantmayuresh2006@gmail.com").strip().lower()
+    name = (x_user_name or email.split("@")[0]).strip()
+    try:
+        return database.get_or_create_user(email=email, name=name, google_id=uid)
+    except Exception:
+        return {"id": uid, "email": email, "name": name, "picture": ""}
 
 
 def normalize_target(raw: str) -> tuple[str, str]:
@@ -965,7 +991,8 @@ def auth_config() -> dict[str, Any]:
 
 
 @app.post("/api/auth/google")
-def google_auth(payload: GoogleAuthRequest, response: Response) -> dict[str, Any]:
+def google_auth(payload: GoogleAuthRequest, request: Request, response: Response) -> dict[str, Any]:
+    is_secure = request.url.scheme == "https" or "vercel.app" in str(request.base_url)
     # 1. Real Google credential verification (ID token or Access token)
     if payload.credential:
         # A. Try ID token verification
@@ -982,8 +1009,8 @@ def google_auth(payload: GoogleAuthRequest, response: Response) -> dict[str, Any
                 picture = data.get("picture", "")
                 google_id = data.get("sub", "")
                 user = database.get_or_create_user(email=email, name=name, picture=picture, google_id=google_id)
-                response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax")
-                return {"ok": True, "user": user}
+                response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax", secure=bool(is_secure))
+                return {"ok": True, "user": user, "token": user["id"]}
         except Exception:
             pass
 
@@ -1001,8 +1028,8 @@ def google_auth(payload: GoogleAuthRequest, response: Response) -> dict[str, Any
                 picture = data.get("picture", "")
                 google_id = data.get("sub", "")
                 user = database.get_or_create_user(email=email, name=name, picture=picture, google_id=google_id)
-                response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax")
-                return {"ok": True, "user": user}
+                response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax", secure=bool(is_secure))
+                return {"ok": True, "user": user, "token": user["id"]}
         except Exception:
             pass
 
@@ -1011,8 +1038,8 @@ def google_auth(payload: GoogleAuthRequest, response: Response) -> dict[str, Any
     demo_name = (payload.name or "Maya").strip()
     demo_picture = payload.picture or "https://api.dicebear.com/7.x/identicon/svg?seed=Maya"
     user = database.get_or_create_user(email=demo_email, name=demo_name, picture=demo_picture, google_id="demo_user")
-    response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax")
-    return {"ok": True, "user": user}
+    response.set_cookie(key="asm_user_id", value=user["id"], httponly=True, max_age=86400 * 30, samesite="lax", secure=bool(is_secure))
+    return {"ok": True, "user": user, "token": user["id"]}
 
 
 @app.get("/api/auth/google/callback")
@@ -1143,6 +1170,9 @@ def find_or_reconstruct_job(scan_id: str) -> dict[str, Any]:
             "summary": summary,
             "zip_name": db_scan.get("zip_name"),
             "zip_size_bytes": db_scan.get("zip_size_bytes", 0),
+            "surfacedrift_advanced": db_scan.get("surfacedrift_advanced"),
+            "risk_score": db_scan.get("risk_score"),
+            "grade": db_scan.get("grade"),
             "error": None,
             "scanner_ready": True,
         }
@@ -1218,6 +1248,8 @@ def find_or_reconstruct_job(scan_id: str) -> dict[str, Any]:
         "zip_name": zip_candidate.name if zip_candidate.is_file() else None,
         "zip_size_bytes": zip_candidate.stat().st_size if zip_candidate.is_file() else 0,
         "surfacedrift_advanced": surfacedrift_adv,
+        "risk_score": (surfacedrift_adv.get("posture") or {}).get("score") if surfacedrift_adv else None,
+        "grade": (surfacedrift_adv.get("posture") or {}).get("grade") if surfacedrift_adv else None,
         "combined_zip_name": combined_name,
         "combined_zip_size": combined_size,
         "error": None,

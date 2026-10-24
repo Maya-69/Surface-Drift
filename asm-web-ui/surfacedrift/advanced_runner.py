@@ -450,6 +450,44 @@ async def run_advanced_assessment(
     for b in breakdown_dicts:
         emit(f"[*] Deduction [-{b['deduction']} pts] {b['category']}: {b['description']}")
 
+    # 17. Synthesize Findings Dictionary
+    all_findings = {
+        "http_probing": {
+            "live_hosts_count": live_count,
+            "results": http_probed_results,
+        },
+        "subdomain_takeovers": {
+            "count": len(takeovers_found),
+            "items": takeovers_found,
+        },
+        "cloud_storage": {
+            "count": len(cloud_buckets_found),
+            "public_count": public_buckets_count,
+            "buckets": cloud_buckets_found,
+        },
+        "waf_bypass": {
+            "count": len(waf_bypasses),
+            "origins": waf_bypasses,
+            "all_ips": enriched_ips,
+        },
+        "threat_prioritization": {
+            "critical_count": critical_vulns_count,
+            "high_count": high_vulns_count,
+            "cves": weaponized_vulns,
+        },
+        "email_security": email_sec_data,
+        "js_secrets": js_secrets_data,
+        "shadow_apis": shadow_api_data,
+        "eol_software": eol_data,
+        "broken_links": blh_data,
+        "waf_history": waf_history_data,
+        "exposed_configs": config_probe_data,
+        "tls_posture": tls_posture_data,
+        "breach_intel": breach_intel_data,
+        "typosquatting": typosquatting_data,
+        "remediation_playbooks": remediation_playbooks,
+    }
+
     # 18. Generate Threat Summary
     emit("[-] Generating executive threat exposure summary...")
     ai_summary = generate_executive_summary(
@@ -465,6 +503,11 @@ async def run_advanced_assessment(
         weaponized_vulns=weaponized_vulns,
         waf_bypasses=waf_bypasses,
         email_sec=email_sec_data,
+        breach_intel=breach_intel_data,
+        typosquatting=typosquatting_data,
+        exposed_configs=config_probe_data,
+        shadow_apis=shadow_api_data,
+        js_secrets=js_secrets_data,
     )
     emit(f"[+] Executive threat summary generated successfully")
 
@@ -479,69 +522,9 @@ async def run_advanced_assessment(
             "breakdown": breakdown_dicts,
         },
         "ai_executive_summary": ai_summary,
-        "findings": {
-            "http_probing": {
-                "live_hosts_count": live_count,
-                "results": http_probed_results,
-            },
-            "subdomain_takeovers": {
-                "count": len(takeovers_found),
-                "items": takeovers_found,
-            },
-            "cloud_storage": {
-                "count": len(cloud_buckets_found),
-                "public_count": public_buckets_count,
-                "buckets": cloud_buckets_found,
-            },
-            "waf_bypass": {
-                "count": len(waf_bypasses),
-                "origins": waf_bypasses,
-                "all_ips": enriched_ips,
-            },
-            "threat_prioritization": {
-                "critical_count": critical_vulns_count,
-                "high_count": high_vulns_count,
-                "cves": weaponized_vulns,
-            },
-            "email_security": email_sec_data,
-            "js_secrets": js_secrets_data,
-            "shadow_apis": shadow_api_data,
-            "eol_software": eol_data,
-            "broken_links": blh_data,
-            "waf_history": waf_history_data,
-            "exposed_configs": config_probe_data,
-            "tls_posture": tls_posture_data,
-            "breach_intel": breach_intel_data,
-            "typosquatting": typosquatting_data,
-            "remediation_playbooks": remediation_playbooks,
-        },
-        "mitre_attack": generate_mitre_matrix(remediation_playbooks.get("findings", {}) if "findings" in remediation_playbooks else {
-            "http_probing": {"live_hosts_count": live_count},
-            "subdomain_takeovers": {"count": len(takeovers_found)},
-            "cloud_storage": {"public_count": public_buckets_count},
-            "waf_bypass": {"count": len(waf_bypasses)},
-            "threat_prioritization": {"critical_count": critical_vulns_count, "high_count": high_vulns_count},
-            "email_security": email_sec_data,
-            "js_secrets": js_secrets_data,
-            "shadow_apis": shadow_api_data,
-            "eol_software": eol_data,
-            "broken_links": blh_data,
-            "waf_history": waf_history_data,
-            "exposed_configs": config_probe_data,
-            "tls_posture": tls_posture_data,
-            "breach_intel": breach_intel_data,
-            "typosquatting": typosquatting_data,
-        }),
-        "attack_graph": build_attack_graph(target, all_subs, enriched_ips, remediation_playbooks.get("findings", {}) if "findings" in remediation_playbooks else {
-            "subdomain_takeovers": {"items": takeovers_found},
-            "cloud_storage": {"buckets": cloud_buckets_found},
-            "waf_bypass": {"origins": waf_bypasses},
-            "threat_prioritization": {"cves": weaponized_vulns},
-            "email_security": email_sec_data,
-            "js_secrets": js_secrets_data,
-            "shadow_apis": shadow_api_data,
-            "exposed_configs": config_probe_data,
-        }),
+        "findings": all_findings,
+        "mitre_attack": generate_mitre_matrix(all_findings),
+        "attack_graph": build_attack_graph(target, all_subs, enriched_ips, all_findings),
         "logs": logs_collected,
     }
 

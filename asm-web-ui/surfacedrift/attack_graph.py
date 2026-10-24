@@ -43,15 +43,17 @@ def build_attack_graph(
     target_id = f"target_{target}"
     add_node(target_id, target, "target", "INFO", {"role": "Primary Scope"})
 
-    # 1. Map Subdomain Assets (up to top 15 for readable visual graph)
-    sample_subs = [s for s in subdomains if s and s != target][:15]
+    # 1. Map Subdomain Assets
+    sample_subs = [s for s in subdomains if s and s != target][:12]
+    subdomain_ip_map: Dict[str, str] = {}
+
     for sub in sample_subs:
         s_id = f"sub_{sub}"
         add_node(s_id, sub, "subdomain", "LOW", {"fqdn": sub})
         add_link(target_id, s_id, "DNS Resolves", "INFO")
 
     # 2. Map IPs & WAF/CDN Infrastructure
-    for ip_data in ip_records[:10]:
+    for ip_data in ip_records[:8]:
         ip_addr = ip_data.get("ip") or ip_data.get("ip_address") or ""
         if not ip_addr:
             continue
@@ -64,15 +66,24 @@ def build_attack_graph(
         lbl = f"{ip_addr} ({'WAF Bypass' if is_bypass else ('CDN Edge' if is_cdn else asn_name[:12])})"
         add_node(ip_id, lbl, "ip", sev, {"ip": ip_addr, "asn": asn_name, "is_bypass": is_bypass})
 
-        # Link from target or subdomains
-        add_link(target_id, ip_id, "Hosts", sev)
+        # Connect matching subdomains to their IP
+        hostnames = ip_data.get("hostnames") or []
+        linked_to_sub = False
+        for h in hostnames:
+            h_clean = h.strip().lower()
+            if h_clean in sample_subs:
+                add_link(f"sub_{h_clean}", ip_id, "A Record", sev)
+                linked_to_sub = True
+                subdomain_ip_map[h_clean] = ip_id
 
-    # 3. Process High-Impact CTEM Findings into Multi-hop Attack Chains
+        if not linked_to_sub:
+            add_link(target_id, ip_id, "Hosts", sev)
+
     attack_chains: List[Dict[str, Any]] = []
 
     # A. Subdomain Takeover Chain
     takeovers = advanced_findings.get("subdomain_takeovers", {}).get("items") or []
-    for idx, t in enumerate(takeovers[:5]):
+    for idx, t in enumerate(takeovers[:4]):
         sub = t.get("subdomain", "")
         service = t.get("service", "Cloud Service")
         cname = t.get("cname", "")
@@ -150,7 +161,7 @@ def build_attack_graph(
         add_link(target_id, exp_id, "Embedded in JS", sev)
 
         sink_id = f"sink_sec_{idx}"
-        add_node(sink_id, f"Unauthorized API / Cloud Privilege Escalation", "impact", "CRITICAL", {"secret": sec_type})
+        add_node(sink_id, "Unauthorized API / Cloud Privilege Escalation", "impact", "CRITICAL", {"secret": sec_type})
         add_link(exp_id, sink_id, "Credential Stuffing", "CRITICAL")
 
         attack_chains.append({
@@ -195,7 +206,7 @@ def build_attack_graph(
         attack_chains.append({
             "title": "Unauthenticated Email Spoofing (BEC)",
             "severity": "HIGH",
-            "path": [target, "DNS SPF/DMARC", "Permissive Policy", "Executive Spearphishing"],
+            "path": [target, "DNS SPF/DMARC", "Permissive Policy", "Executive Spearphishing / Wire Fraud"],
             "mitre": "T1566.002"
         })
 
@@ -207,7 +218,7 @@ def build_attack_graph(
         is_kev = c.get("cisa_kev", False)
         epss = c.get("epss_score") or 0.0
 
-        if is_kev or epss >= 0.50:
+        if is_kev or epss >= 0.40:
             exp_id = f"exp_cve_{idx}"
             add_node(exp_id, f"Weaponized {cve_id} (EPSS: {epss:.0%})", "exposure", "CRITICAL", c)
             ip_id = f"ip_{ip_addr}" if ip_addr else target_id
@@ -223,6 +234,77 @@ def build_attack_graph(
                 "path": [target, ip_addr or "Host", cve_id, "Remote Code Execution"],
                 "mitre": "T1190"
             })
+
+    # H. Identity Breach & Credential Leaks Chain
+    breach_intel = advanced_findings.get("breach_intel") or {}
+    breached_accounts = breach_intel.get("breached_identities") or []
+    if breached_accounts:
+        crit_count = breach_intel.get("critical_credential_leaks_count", 0)
+        sample_email = breached_accounts[0].get("email", f"staff@{target}")
+        exp_id = "exp_identity_breach"
+        add_node(exp_id, f"Exposed Credentials ({len(breached_accounts)} accounts)", "exposure", "CRITICAL" if crit_count > 0 else "HIGH", breach_intel)
+        add_link(target_id, exp_id, "Breach Intelligence Match", "HIGH")
+
+        sink_id = "sink_identity_breach"
+        add_node(sink_id, "Corporate Account Takeover & Credential Stuffing", "impact", "CRITICAL", breach_intel)
+        add_link(exp_id, sink_id, "Password Re-use", "CRITICAL")
+
+        attack_chains.append({
+            "title": f"Credential Exposure: {sample_email} (+{len(breached_accounts)-1} accounts)",
+            "severity": "CRITICAL" if crit_count > 0 else "HIGH",
+            "path": [target, "Third-Party Data Dumps", f"{len(breached_accounts)} Leaked Identities", "Internal VPN / SaaS Account Takeover"],
+            "mitre": "T1589.001 / T1110"
+        })
+
+    # I. Brand Phishing & Active Typosquatting Chain
+    typo_intel = advanced_findings.get("typosquatting") or {}
+    active_squats = typo_intel.get("active_squats") or []
+    phishing_squats = [s for s in active_squats if s.get("threat_level") == "WEAPONIZED_PHISHING" or s.get("has_mx")]
+    if phishing_squats:
+        sample_squat = phishing_squats[0].get("domain", f"login-{target}")
+        exp_id = "exp_brand_phishing"
+        add_node(exp_id, f"Weaponized Typosquat ({sample_squat})", "exposure", "HIGH", typo_intel)
+        add_link(target_id, exp_id, "Homoglyph Permutation", "HIGH")
+
+        sink_id = "sink_brand_phishing"
+        add_node(sink_id, "Employee / Client Credential Phishing Campaign", "impact", "HIGH", typo_intel)
+        add_link(exp_id, sink_id, "Active MX Delivery", "HIGH")
+
+        attack_chains.append({
+            "title": f"Active Phishing Squat: {sample_squat}",
+            "severity": "HIGH",
+            "path": [target, "Permutation Radar", sample_squat, "Targeted Credential Harvesting Phish"],
+            "mitre": "T1583.001"
+        })
+
+    # J. Shadow API & Schema Exposure Chain
+    shadow_api = advanced_findings.get("shadow_apis") or {}
+    endpoints = shadow_api.get("endpoints") or []
+    if endpoints:
+        sample_ep = endpoints[0].get("url", f"https://api.{target}/swagger.json")
+        exp_id = "exp_shadow_api"
+        add_node(exp_id, f"Exposed API Specs ({len(endpoints)} docs)", "exposure", "MEDIUM", shadow_api)
+        add_link(target_id, exp_id, "Unauthenticated Schema Probe", "MEDIUM")
+
+        sink_id = "sink_shadow_api"
+        add_node(sink_id, "Shadow API Reverse Engineering & Parameter Tampering", "impact", "HIGH", shadow_api)
+        add_link(exp_id, sink_id, "Endpoint Enumeration", "HIGH")
+
+        attack_chains.append({
+            "title": f"Shadow API Exposure ({len(endpoints)} endpoints)",
+            "severity": "MEDIUM",
+            "path": [target, "Unauthenticated Endpoints", "OpenAPI / GraphQL Schema", "BOLA / IDOR Exploitation"],
+            "mitre": "T1595.002"
+        })
+
+    # If no high-risk chains triggered, add an educational defensive chain demonstrating perimeter inspection
+    if not attack_chains:
+        attack_chains.append({
+            "title": f"Perimeter Defense Baseline: {target}",
+            "severity": "INFO",
+            "path": [target, f"{len(sample_subs)} DNS Endpoints", f"{len(ip_records)} IP Boundaries", "Zero Exploitable Multi-Hop Traversal Vectors"],
+            "mitre": "T1046"
+        })
 
     return {
         "nodes": nodes,
