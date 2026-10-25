@@ -33,6 +33,7 @@ from surfacedrift.advanced_runner import run_advanced_assessment
 from surfacedrift.drift_engine import compute_surface_drift
 from surfacedrift.mitre_mapping import generate_mitre_matrix
 from surfacedrift.attack_graph import build_attack_graph
+from surfacedrift.report_generator import generate_html_report, generate_markdown_report, generate_pdf_report
 
 APP_DIR = Path(__file__).resolve().parent
 _project_root_setting = os.getenv("ASM_PROJECT_ROOT")
@@ -103,6 +104,9 @@ class ContinueSurfaceDriftRequest(BaseModel):
             "remediation",
         ]
     )
+    target: Optional[str] = None
+    summary: Optional[dict[str, Any]] = None
+
 
 
 class GoogleAuthRequest(BaseModel):
@@ -118,6 +122,14 @@ class ExportZipRequest(BaseModel):
     target: str
     summary: dict[str, Any]
     advanced: Optional[dict[str, Any]] = None
+
+
+class ExportReportRequest(BaseModel):
+    scan_id: str
+    target: str
+    summary: Optional[dict[str, Any]] = None
+    advanced: Optional[dict[str, Any]] = None
+    format: str = Field(default="pdf", pattern="^(html|md|markdown|json|pdf)$")
 
 
 class DriftDiffRequest(BaseModel):
@@ -557,10 +569,20 @@ def build_zip_bytes_from_summary(
 
         if advanced:
             archive.writestr(f"{folder}/surfacedrift_advanced_report.json", json.dumps(advanced, indent=2))
-            remediation = advanced.get("remediation", [])
+            try:
+                html_rep = generate_html_report(target=target, scan_id=scan_id, summary=summary, advanced=advanced)
+                archive.writestr(f"{folder}/surfacedrift_security_report.html", html_rep)
+            except Exception as e:
+                logger.warning("Could not add HTML report to zip: %s", e)
+            try:
+                md_rep = generate_markdown_report(target=target, scan_id=scan_id, summary=summary, advanced=advanced)
+                archive.writestr(f"{folder}/surfacedrift_executive_report.md", md_rep)
+            except Exception as e:
+                logger.warning("Could not add MD report to zip: %s", e)
+            remediation = advanced.get("remediation", []) or (advanced.get("findings") or {}).get("remediation_playbooks", [])
             if remediation:
                 rem_text = "\n\n".join(
-                    f"[{item.get('severity', 'INFO')}] {item.get('title')}\nPlaybook: {item.get('playbook')}\nCommand / Fix:\n{item.get('code')}"
+                    f"[{item.get('severity', 'INFO')}] {item.get('title')}\nPlaybook: {item.get('playbook')}\nCommand / Fix:\n{item.get('code_snippet') or item.get('code')}"
                     for item in remediation
                 )
                 archive.writestr(f"{folder}/remediation_playbooks.txt", rem_text + "\n")
@@ -1232,14 +1254,23 @@ def find_or_reconstruct_job(scan_id: str) -> dict[str, Any]:
 
     # Disk folder fallback
     matched_run = None
-    if RUNS_DIR.exists():
-        for p in RUNS_DIR.iterdir():
-            if p.is_dir() and (p.name == scan_id or p.name.startswith(f"{scan_id}_")):
-                matched_run = p
+    candidate_dirs = [RUNS_DIR]
+    for c_dir in [APP_DIR.parent / "demo_run", PROJECT_ROOT / "demo_run", RUNS_DIR.parent / "demo_run"]:
+        if c_dir.exists() and c_dir.resolve() not in [c.resolve() for c in candidate_dirs if c.exists()]:
+            candidate_dirs.append(c_dir)
+
+    for c_dir in candidate_dirs:
+        if c_dir.exists():
+            for p in c_dir.iterdir():
+                if p.is_dir() and (p.name == scan_id or p.name.startswith(f"{scan_id}_")):
+                    matched_run = p
+                    break
+            if matched_run:
                 break
 
     if not matched_run:
-        raise HTTPException(status_code=404, detail="Scan not found.")
+        raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found.")
+
 
     subdirs = [s for s in matched_run.iterdir() if s.is_dir()]
     target_dir = max(subdirs, key=lambda d: d.stat().st_mtime) if subdirs else matched_run
@@ -1329,7 +1360,22 @@ async def continue_surfacedrift(
             status_code=401,
             detail="Authentication required: You must sign in with Google to run Phase 2 Deep Probing assessments."
         )
-    job = find_or_reconstruct_job(scan_id)
+    job = None
+    try:
+        job = find_or_reconstruct_job(scan_id)
+    except HTTPException:
+        if payload.summary and (payload.target or payload.summary.get("target")):
+            job = {
+                "id": scan_id,
+                "target": payload.target or payload.summary.get("target"),
+                "status": "completed",
+                "summary": payload.summary,
+            }
+            with JOBS_LOCK:
+                JOBS[scan_id] = job
+        else:
+            raise
+
     if job.get("status") != "completed" or not job.get("summary"):
         raise HTTPException(status_code=400, detail="Initial reconnaissance scan must be complete before running SurfaceDrift advanced assessment.")
 
@@ -1342,17 +1388,21 @@ async def continue_surfacedrift(
     email_sec = sections.get("email_security", {})
 
     output_root_str = job.get("output_root")
-    if output_root_str:
+    if output_root_str and Path(output_root_str).exists():
         output_root = Path(output_root_str).resolve()
     else:
         matched = None
-        if RUNS_DIR.exists():
-            for p in RUNS_DIR.iterdir():
-                if p.is_dir() and (p.name == scan_id or p.name.startswith(f"{scan_id}_")):
-                    matched = p
+        for c_dir in [RUNS_DIR, APP_DIR.parent / "demo_run", PROJECT_ROOT / "demo_run"]:
+            if c_dir.exists():
+                for p in c_dir.iterdir():
+                    if p.is_dir() and (p.name == scan_id or p.name.startswith(f"{scan_id}_")):
+                        matched = p
+                        break
+                if matched:
                     break
         output_root = matched or (RUNS_DIR / scan_id)
 
+    output_root.mkdir(parents=True, exist_ok=True)
     target_dirs = [p for p in output_root.iterdir() if p.is_dir()] if output_root.exists() else []
     result_dir = max(target_dirs, key=lambda p: p.stat().st_mtime) if target_dirs else output_root
 
@@ -1395,7 +1445,22 @@ async def continue_surfacedrift_stream(
             status_code=401,
             detail="Authentication required: You must sign in with Google to run Phase 2 Deep Probing assessments."
         )
-    job = find_or_reconstruct_job(scan_id)
+    job = None
+    try:
+        job = find_or_reconstruct_job(scan_id)
+    except HTTPException:
+        if payload.summary and (payload.target or payload.summary.get("target")):
+            job = {
+                "id": scan_id,
+                "target": payload.target or payload.summary.get("target"),
+                "status": "completed",
+                "summary": payload.summary,
+            }
+            with JOBS_LOCK:
+                JOBS[scan_id] = job
+        else:
+            raise
+
     if job.get("status") != "completed" or not job.get("summary"):
         raise HTTPException(
             status_code=400,
@@ -1411,19 +1476,24 @@ async def continue_surfacedrift_stream(
     email_sec = sections.get("email_security", {})
 
     output_root_str = job.get("output_root")
-    if output_root_str:
+    if output_root_str and Path(output_root_str).exists():
         output_root = Path(output_root_str).resolve()
     else:
         matched = None
-        if RUNS_DIR.exists():
-            for p in RUNS_DIR.iterdir():
-                if p.is_dir() and (p.name == scan_id or p.name.startswith(f"{scan_id}_")):
-                    matched = p
+        for c_dir in [RUNS_DIR, APP_DIR.parent / "demo_run", PROJECT_ROOT / "demo_run"]:
+            if c_dir.exists():
+                for p in c_dir.iterdir():
+                    if p.is_dir() and (p.name == scan_id or p.name.startswith(f"{scan_id}_")):
+                        matched = p
+                        break
+                if matched:
                     break
         output_root = matched or (RUNS_DIR / scan_id)
 
+    output_root.mkdir(parents=True, exist_ok=True)
     target_dirs = [p for p in output_root.iterdir() if p.is_dir()] if output_root.exists() else []
     result_dir = max(target_dirs, key=lambda p: p.stat().st_mtime) if target_dirs else output_root
+
 
     async def event_generator():
         log_queue = asyncio.Queue()
@@ -1530,6 +1600,207 @@ def download_combined_scan(scan_id: str):
         )
 
     raise HTTPException(status_code=404, detail="Combined assessment report archive not found.")
+
+
+@app.get("/api/scans/{scan_id}/report.html")
+def get_scan_html_report(scan_id: str, download: bool = False):
+    job = find_or_reconstruct_job(scan_id)
+    target = job.get("target", "target")
+    adv = job.get("surfacedrift_advanced")
+    summary = job.get("summary") or {}
+
+    # Check if pre-generated file exists in ARTIFACTS_DIR or scan output_root
+    html_name = f"{target}-surfacedrift-report-{scan_id}.html"
+    candidates = [
+        ARTIFACTS_DIR / html_name,
+        ARTIFACTS_DIR / f"{scan_id}_report.html",
+    ]
+    if job.get("output_root"):
+        out_root = Path(job["output_root"])
+        candidates.extend([
+            out_root / "surfacedrift_security_report.html",
+            out_root / html_name,
+        ])
+        if out_root.exists():
+            for sub in [p for p in out_root.iterdir() if p.is_dir()]:
+                candidates.append(sub / "surfacedrift_security_report.html")
+
+    for cand in candidates:
+        if cand.is_file():
+            disposition = f'attachment; filename="{target}-surfacedrift-report-{scan_id}.html"' if download else "inline"
+            return FileResponse(
+                cand,
+                media_type="text/html",
+                headers={"Content-Disposition": disposition}
+            )
+
+    # Dynamic generation fallback
+    html_content = generate_html_report(
+        target=target,
+        scan_id=scan_id,
+        summary=summary,
+        advanced=adv,
+    )
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{target}-surfacedrift-report-{scan_id}.html"'
+    return Response(content=html_content, media_type="text/html", headers=headers)
+
+
+@app.get("/api/scans/{scan_id}/report.md")
+def get_scan_markdown_report(scan_id: str, download: bool = True):
+    job = find_or_reconstruct_job(scan_id)
+    target = job.get("target", "target")
+    adv = job.get("surfacedrift_advanced")
+    summary = job.get("summary") or {}
+
+    md_content = generate_markdown_report(
+        target=target,
+        scan_id=scan_id,
+        summary=summary,
+        advanced=adv,
+    )
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{target}-surfacedrift-report-{scan_id}.md"'
+    return Response(content=md_content, media_type="text/markdown", headers=headers)
+
+
+@app.get("/api/scans/{scan_id}/report.pdf")
+async def get_scan_pdf_report(scan_id: str, download: bool = True):
+    job = find_or_reconstruct_job(scan_id)
+    target = job.get("target", "target")
+    adv = job.get("surfacedrift_advanced")
+    summary = job.get("summary") or {}
+
+    pdf_name = f"{target}-surfacedrift-report-{scan_id}.pdf"
+    candidates = [
+        ARTIFACTS_DIR / pdf_name,
+        ARTIFACTS_DIR / f"{scan_id}_report.pdf",
+    ]
+    if job.get("output_root"):
+        out_root = Path(job["output_root"])
+        candidates.extend([
+            out_root / "surfacedrift_security_report.pdf",
+            out_root / pdf_name,
+        ])
+        if out_root.exists():
+            for sub in [p for p in out_root.iterdir() if p.is_dir()]:
+                candidates.append(sub / "surfacedrift_security_report.pdf")
+
+    for cand in candidates:
+        if cand.is_file():
+            disposition = f'attachment; filename="{target}-surfacedrift-report-{scan_id}.pdf"' if download else "inline"
+            return FileResponse(
+                cand,
+                media_type="application/pdf",
+                headers={"Content-Disposition": disposition}
+            )
+
+    # Dynamic Chromium rendering fallback
+    pdf_bytes = await generate_pdf_report(
+        target=target,
+        scan_id=scan_id,
+        summary=summary,
+        advanced=adv,
+    )
+    if pdf_bytes:
+        try:
+            (ARTIFACTS_DIR / pdf_name).write_bytes(pdf_bytes)
+        except Exception:
+            pass
+        disposition = f'attachment; filename="{target}-surfacedrift-report-{scan_id}.pdf"' if download else "inline"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": disposition}
+        )
+
+    # Fallback to HTML if headless browser could not launch
+    return get_scan_html_report(scan_id, download=download)
+
+
+@app.get("/api/scans/{scan_id}/download-report")
+async def download_scan_report(scan_id: str, format: str = "pdf"):
+    fmt = format.lower().strip()
+    if fmt == "pdf":
+        return await get_scan_pdf_report(scan_id, download=True)
+    elif fmt == "html":
+        return get_scan_html_report(scan_id, download=True)
+    elif fmt in ("md", "markdown"):
+        return get_scan_markdown_report(scan_id, download=True)
+    elif fmt == "json":
+        job = find_or_reconstruct_job(scan_id)
+        adv = job.get("surfacedrift_advanced") or {}
+        return Response(
+            content=json.dumps(adv, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{job.get("target", "target")}-surfacedrift-advanced-{scan_id}.json"'}
+        )
+    elif fmt == "zip":
+        return download_combined_scan(scan_id)
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format. Supported: pdf, html, md, json, zip")
+
+
+@app.post("/api/scans/export-report")
+async def export_report_endpoint(payload: ExportReportRequest) -> Response:
+    fmt = payload.format.lower().strip()
+    if fmt == "pdf":
+        pdf_bytes = await generate_pdf_report(
+            target=payload.target,
+            scan_id=payload.scan_id,
+            summary=payload.summary,
+            advanced=payload.advanced,
+        )
+        if pdf_bytes:
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{payload.target}-surfacedrift-report-{payload.scan_id}.pdf"'}
+            )
+        # Fallback to HTML if PDF cannot be rendered
+        content = generate_html_report(
+            target=payload.target,
+            scan_id=payload.scan_id,
+            summary=payload.summary,
+            advanced=payload.advanced,
+        )
+        return Response(
+            content=content,
+            media_type="text/html",
+            headers={"Content-Disposition": f'attachment; filename="{payload.target}-surfacedrift-report-{payload.scan_id}.html"'}
+        )
+    elif fmt in ("md", "markdown"):
+        content = generate_markdown_report(
+            target=payload.target,
+            scan_id=payload.scan_id,
+            summary=payload.summary,
+            advanced=payload.advanced,
+        )
+        return Response(
+            content=content,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{payload.target}-surfacedrift-report-{payload.scan_id}.md"'}
+        )
+    elif fmt == "json":
+        return Response(
+            content=json.dumps(payload.advanced or {}, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{payload.target}-surfacedrift-report-{payload.scan_id}.json"'}
+        )
+    else:
+        content = generate_html_report(
+            target=payload.target,
+            scan_id=payload.scan_id,
+            summary=payload.summary,
+            advanced=payload.advanced,
+        )
+        return Response(
+            content=content,
+            media_type="text/html",
+            headers={"Content-Disposition": f'attachment; filename="{payload.target}-surfacedrift-report-{payload.scan_id}.html"'}
+        )
 
 
 
@@ -1726,7 +1997,9 @@ async def not_found(_request: Request, exc):
     path = _request.url.path
     if not path.startswith("/api/") and not path.startswith("/static/"):
         return FileResponse(STATIC_DIR / "index.html")
-    return JSONResponse(status_code=404, content={"detail": "Not found"})
+    detail = getattr(exc, "detail", "Not found")
+    return JSONResponse(status_code=404, content={"detail": detail})
+
 
 
 

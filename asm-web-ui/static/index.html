@@ -577,6 +577,88 @@
                 </div>
               </div>
 
+              <!-- Executive Report Download Action Hub -->
+              <div class="report-download-hub" id="report-download-hub">
+                <div class="download-hub-header">
+                  <div class="download-hub-title">
+                    <div class="hub-icon-shield">
+                      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <h4>Download Executive Security Assessment Report</h4>
+                      <p>Full structured audit report with executive threat narrative, MITRE ATT&amp;CK matrix, 15 deep exposure modules, and SecOps remediation playbooks.</p>
+                    </div>
+                  </div>
+                  <div class="hub-status-wrap">
+                    <span class="report-status-badge">Phase 2 Probing &bull; Complete</span>
+                  </div>
+                </div>
+
+                <div class="download-hub-buttons">
+                  <button type="button" class="button button-primary btn-report-dl btn-report-pdf" id="btn-dl-report-pdf">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="16" y1="13" x2="8" y2="13"></line>
+                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                      <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    <span>Download Report (PDF)</span>
+                    <span class="hub-btn-tag">Direct PDF</span>
+                  </button>
+
+                  <button type="button" class="button button-secondary btn-report-dl btn-report-html" id="btn-dl-report-html">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="2" y1="12" x2="22" y2="12"></line>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                    <span>Interactive (HTML)</span>
+                    <span class="hub-btn-tag">Web</span>
+                  </button>
+
+                  <button type="button" class="button button-secondary btn-report-dl btn-report-md" id="btn-dl-report-md">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="4 7 4 4 20 4 20 7"></polyline>
+                      <line x1="9" y1="20" x2="15" y2="20"></line>
+                      <line x1="12" y1="4" x2="12" y2="20"></line>
+                    </svg>
+                    <span>Summary Report (MD)</span>
+                    <span class="hub-btn-tag">Markdown</span>
+                  </button>
+
+                  <button type="button" class="button button-secondary btn-report-dl btn-report-bundle" id="btn-dl-report-bundle">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                      <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                      <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                    </svg>
+                    <span>Assessment Bundle (ZIP)</span>
+                    <span class="hub-btn-tag">Full Data</span>
+                  </button>
+
+                  <button type="button" class="button button-secondary btn-report-dl btn-report-json" id="btn-dl-report-json">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="16 18 22 12 16 6"></polyline>
+                      <polyline points="8 6 2 12 8 18"></polyline>
+                    </svg>
+                    <span>Raw JSON Data</span>
+                    <span class="hub-btn-tag">API</span>
+                  </button>
+
+                  <a class="button button-secondary btn-report-dl btn-report-preview" id="btn-preview-report-html" href="#" target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    <span>Print / Preview</span>
+                    <span class="hub-btn-tag">↗</span>
+                  </a>
+                </div>
+              </div>
+
               <!-- Deep Finding Panels Grid -->
               <div class="deep-findings-grid">
                 <!-- HTTP Live Hosts & Tech Stack -->
@@ -771,10 +853,18 @@
                     <span>Includes all initial reconnaissance assets (subdomains, IPs, emails, DNS, buckets) plus complete SurfaceDrift deep CTEM reports, HTTP probe data, takeover audits, and AI executive summary.</span>
                   </div>
                 </div>
-                <a class="button button-primary btn-download-combined-all" id="btn-download-combined-all" href="#" download>
-                  <span>Download Complete Assessment (ZIP)</span>
-                  <span class="button-arrow" aria-hidden="true">↓</span>
-                </a>
+                <div class="combined-banner-actions">
+                  <button type="button" class="button button-primary btn-download-combined-all" id="btn-download-combined-all">
+                    <span>Download Full Bundle (ZIP)</span>
+                    <span class="button-arrow" aria-hidden="true">↓</span>
+                  </button>
+                  <button type="button" class="button button-secondary btn-download-bottom-html" id="btn-download-bottom-html">
+                    <span>HTML / PDF Report</span>
+                  </button>
+                  <button type="button" class="button button-secondary btn-download-bottom-md" id="btn-download-bottom-md">
+                    <span>Markdown</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

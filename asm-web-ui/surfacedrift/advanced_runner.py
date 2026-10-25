@@ -28,6 +28,7 @@ from .typosquat_monitor import audit_typosquatting_threats
 from .remediation_playbooks import generate_automated_playbooks
 from .mitre_mapping import generate_mitre_matrix
 from .attack_graph import build_attack_graph
+from .report_generator import generate_html_report, generate_markdown_report, generate_pdf_report
 
 logger = logging.getLogger(__name__)
 
@@ -605,8 +606,66 @@ async def run_advanced_assessment(
             json.dumps({"score": risk_eval.score, "grade": risk_eval.grade, "breakdown": breakdown_dicts}, indent=2),
             encoding="utf-8",
         )
+
+        # Generate Well-Structured Standalone HTML & Markdown Reports
+        emit("[-] Synthesizing structured executive HTML & Markdown assessment reports...")
+        summary_payload = {
+            "sections": {
+                "subdomains": all_subs,
+                "ip_records": enriched_ips,
+                "ports_and_vulns": ports_and_vulns,
+                "email_security": email_sec_data,
+                "dns_records": [],
+            }
+        }
+        html_report_content = generate_html_report(
+            target=target,
+            scan_id=scan_id,
+            summary=summary_payload,
+            advanced=advanced_report,
+        )
+        md_report_content = generate_markdown_report(
+            target=target,
+            scan_id=scan_id,
+            summary=summary_payload,
+            advanced=advanced_report,
+        )
+
+        # Write inside output_dir so it gets packaged into the ZIP automatically
+        (output_dir / "surfacedrift_security_report.html").write_text(html_report_content, encoding="utf-8")
+        (output_dir / "surfacedrift_executive_report.md").write_text(md_report_content, encoding="utf-8")
+
+        # Also write directly to artifacts_dir for instant download
+        html_report_name = f"{target}-surfacedrift-report-{scan_id}.html"
+        md_report_name = f"{target}-surfacedrift-report-{scan_id}.md"
+        (artifacts_dir / html_report_name).write_text(html_report_content, encoding="utf-8")
+        (artifacts_dir / md_report_name).write_text(md_report_content, encoding="utf-8")
+
+        advanced_report["html_report_name"] = html_report_name
+        advanced_report["md_report_name"] = md_report_name
+        emit(f"[+] Structured HTML and Markdown reports generated successfully")
+
+        # Generate Pixel-Perfect PDF Report (Matching HTML Preview Exactly)
+        emit("[-] Generating executive PDF report via Chromium rendering engine...")
+        try:
+            pdf_bytes = await generate_pdf_report(
+                target=target,
+                scan_id=scan_id,
+                summary=summary_payload,
+                advanced=advanced_report,
+                html_content=html_report_content,
+            )
+            if pdf_bytes:
+                (output_dir / "surfacedrift_security_report.pdf").write_bytes(pdf_bytes)
+                pdf_report_name = f"{target}-surfacedrift-report-{scan_id}.pdf"
+                (artifacts_dir / pdf_report_name).write_bytes(pdf_bytes)
+                advanced_report["pdf_report_name"] = pdf_report_name
+                size_kb = len(pdf_bytes) / 1024
+                emit(f"[+] Pixel-perfect executive PDF report generated ({size_kb:.1f} KB)")
+        except Exception as pdf_err:
+            logger.warning("PDF generation failed: %s", pdf_err)
     except Exception as exc:
-        logger.warning("Could not write all SurfaceDrift JSON files: %s", exc)
+        logger.warning("Could not write all SurfaceDrift report files: %s", exc)
 
     # 11. Create Consolidated Combined ZIP Archive
     combined_zip_name = f"surfacedrift-complete-{scan_id}.zip"
