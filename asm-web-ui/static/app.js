@@ -456,9 +456,113 @@
     }
   }
 
+  async function downloadReportFile(scanId, target, format = 'pdf') {
+    target = target || 'target';
+    const statusMsg = $('#download-status');
+    const fmtLower = (format || 'pdf').toLowerCase().trim();
+    const extMap = { pdf: 'pdf', html: 'html', md: 'md', markdown: 'md', json: 'json', zip: 'zip' };
+    const defaultExt = extMap[fmtLower] || 'pdf';
+
+    if (statusMsg) statusMsg.textContent = `Preparing ${fmtLower.toUpperCase()} report…`;
+
+    try {
+      const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}/download-report?format=${encodeURIComponent(fmtLower)}`);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        let ext = defaultExt;
+        const ctype = (resp.headers.get('content-type') || '').toLowerCase();
+        if (ctype.includes('application/pdf')) ext = 'pdf';
+        else if (ctype.includes('text/html')) ext = 'html';
+        else if (ctype.includes('application/json')) ext = 'json';
+        else if (ctype.includes('text/markdown')) ext = 'md';
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${target}-surfacedrift-report-${scanId}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        if (statusMsg) statusMsg.textContent = `Report downloaded (${ext.toUpperCase()}).`;
+        return;
+      }
+    } catch (e) {
+      console.warn(`Direct report download failed for ${fmtLower}:`, e);
+    }
+
+    // Client fallback via POST /api/scans/export-report
+    if (lastJob?.summary || lastJob?.surfacedrift_advanced) {
+      try {
+        const postResp = await fetch('/api/scans/export-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scan_id: scanId,
+            target: target,
+            summary: lastJob?.summary || null,
+            advanced: lastJob?.surfacedrift_advanced || null,
+            format: fmtLower
+          }),
+        });
+        if (postResp.ok) {
+          const blob = await postResp.blob();
+          let ext = defaultExt;
+          const ctype = (postResp.headers.get('content-type') || '').toLowerCase();
+          if (ctype.includes('application/pdf')) ext = 'pdf';
+          else if (ctype.includes('text/html')) ext = 'html';
+          else if (ctype.includes('application/json')) ext = 'json';
+          else if (ctype.includes('text/markdown')) ext = 'md';
+
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${target}-surfacedrift-report-${scanId}.${ext}`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          if (statusMsg) statusMsg.textContent = `Report downloaded (${ext.toUpperCase()}).`;
+          return;
+        }
+      } catch (err) {
+        console.error('Export report fallback failed:', err);
+      }
+    }
+
+    // If PDF download fails on both endpoints, fallback to opening the interactive report
+    if (fmtLower === 'pdf') {
+      window.open(`/api/scans/${encodeURIComponent(scanId)}/report.html`, '_blank');
+      if (statusMsg) statusMsg.textContent = 'Opened interactive report. Click "Print / Save PDF" in the toolbar.';
+      return;
+    }
+
+    alert(`Failed to download ${fmtLower.toUpperCase()} report. Assessment data could not be retrieved.`);
+    if (statusMsg) statusMsg.textContent = '';
+  }
+
   async function downloadScanArchive(item) {
     const scanId = item.id;
     const target = item.target || 'target';
+
+    // If Phase 2 CTEM assessment is present, download the combined full bundle
+    if (item.surfacedrift_advanced) {
+      try {
+        const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}/download-combined`);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${target}-surfacedrift-full-assessment-${scanId}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          return;
+        }
+      } catch {}
+    }
 
     try {
       const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}/download`);
@@ -493,7 +597,7 @@
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `${target}-asm-report-${scanId}.zip`;
+          a.download = `${target}-surfacedrift-full-assessment-${scanId}.zip`;
           document.body.appendChild(a);
           a.click();
           a.remove();
@@ -1564,12 +1668,19 @@
           appendAdvLog(`[-] SurfaceDrift CTEM Pipeline initiated for target: ${job.target}`);
         }
 
+        const scanPayload = {
+          categories,
+          target: job.target,
+          summary: job.summary
+        };
+        const scanId = job.id || activeScanId;
+
         let completed = false;
         try {
-          const resp = await fetch(`/api/scans/${encodeURIComponent(job.id)}/continue-surfacedrift-stream`, {
+          const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}/continue-surfacedrift-stream`, {
             method: 'POST',
             headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ categories }),
+            body: JSON.stringify(scanPayload),
           });
 
           if (resp.status === 401) {
@@ -1604,7 +1715,7 @@
                   appendAdvLog(event.line);
                 } else if (event.type === 'done') {
                   completed = true;
-                  renderAdvancedResults(event.advanced, job.id);
+                  renderAdvancedResults(event.advanced, scanId);
                   launchBtn.innerHTML = '<span>Re-run SurfaceDrift Analysis</span><span class="button-arrow" aria-hidden="true">⚡</span>';
                   const advView = $('#advanced-results-view');
                   if (advView) {
@@ -1644,11 +1755,12 @@
             }, 2500);
 
             try {
-              const fallbackResp = await fetch(`/api/scans/${encodeURIComponent(job.id)}/continue-surfacedrift`, {
+              const fallbackResp = await fetch(`/api/scans/${encodeURIComponent(scanId)}/continue-surfacedrift`, {
                 method: 'POST',
                 headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ categories }),
+                body: JSON.stringify(scanPayload),
               });
+
               clearInterval(progressTicker);
 
               if (fallbackResp.status === 401) {
@@ -2249,19 +2361,75 @@
     // 16. Graph-Based Attack Path Chaining
     renderAttackPathGraph(adv.attack_graph, lastJob);
 
-    // 4. Combined Download All Link
+    // Wire up Executive Report Download Action Hub
+    const reportTarget = lastJob?.target || 'target';
+
+    const btnPdf = $('#btn-dl-report-pdf');
+    if (btnPdf) {
+      btnPdf.onclick = () => downloadReportFile(scanId, reportTarget, 'pdf');
+    }
+
+    const btnHtml = $('#btn-dl-report-html');
+    if (btnHtml) {
+      btnHtml.onclick = () => downloadReportFile(scanId, reportTarget, 'html');
+    }
+
+    const btnMd = $('#btn-dl-report-md');
+    if (btnMd) {
+      btnMd.onclick = () => downloadReportFile(scanId, reportTarget, 'md');
+    }
+
+    const btnBundle = $('#btn-dl-report-bundle');
+    if (btnBundle) {
+      btnBundle.onclick = async () => {
+        await downloadScanArchive({
+          id: scanId,
+          target: reportTarget,
+          summary: lastJob?.summary,
+          surfacedrift_advanced: adv,
+        });
+      };
+    }
+
+    const btnJson = $('#btn-dl-report-json');
+    if (btnJson) {
+      btnJson.onclick = () => downloadReportFile(scanId, reportTarget, 'json');
+    }
+
+    const btnPreview = $('#btn-preview-report-html');
+    if (btnPreview) {
+      btnPreview.href = `/api/scans/${encodeURIComponent(scanId)}/report.html`;
+    }
+
+    // Bottom combined package banner links
     const combinedBtn = $('#btn-download-combined-all');
     if (combinedBtn) {
       combinedBtn.onclick = async (e) => {
         e.preventDefault();
         await downloadScanArchive({
           id: scanId,
-          target: lastJob?.target || 'target',
+          target: reportTarget,
           summary: lastJob?.summary,
           surfacedrift_advanced: adv,
         });
       };
     }
+
+    const bottomHtmlBtn = $('#btn-download-bottom-html');
+    if (bottomHtmlBtn) {
+      bottomHtmlBtn.onclick = () => downloadReportFile(scanId, reportTarget, 'html');
+    }
+
+    const bottomMdBtn = $('#btn-download-bottom-md');
+    if (bottomMdBtn) {
+      bottomMdBtn.onclick = () => downloadReportFile(scanId, reportTarget, 'md');
+    }
+
+    // Update top & bottom master download badges
+    const dlTopBadge = $('#download-size-top');
+    if (dlTopBadge) dlTopBadge.textContent = 'FULL CTEM BUNDLE';
+    const dlBottomBadge = $('#download-size');
+    if (dlBottomBadge) dlBottomBadge.textContent = 'COMPLETE CTEM REPORT + ZIP';
   }
 
   // =========================================================================
@@ -3078,6 +3246,15 @@
   async function triggerDownload() {
     if (!activeScanId || !lastJob || lastJob.status !== 'completed') return;
     const downloadStatus = $('#download-status');
+
+    // If Phase 2 CTEM data is present, prefer the PDF executive report
+    if (lastJob.surfacedrift_advanced) {
+      if (downloadStatus) downloadStatus.textContent = 'Generating PDF executive report…';
+      await downloadReportFile(activeScanId, lastJob.target || 'target', 'pdf');
+      if (downloadStatus) downloadStatus.textContent = 'PDF report downloaded.';
+      return;
+    }
+
     if (downloadStatus) downloadStatus.textContent = 'Preparing your report archive…';
 
     await downloadScanArchive({
