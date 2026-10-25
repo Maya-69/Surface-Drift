@@ -1315,6 +1315,164 @@ body.scan-mode .header-nav{display:none}body.scan-mode .mobile-menu{display:none
   flex-shrink: 0;
 }
 
+.combined-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   Executive Report Download Action Hub
+   ========================================================================== */
+.report-download-hub {
+  margin: 22px 0 28px;
+  background: linear-gradient(135deg, rgba(8, 28, 34, 0.96), rgba(4, 16, 20, 0.98));
+  border: 1px solid rgba(67, 226, 210, 0.4);
+  border-radius: 10px;
+  padding: 22px 24px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(67, 226, 210, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.report-download-hub::before {
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(67, 226, 210, 0.16), transparent 70%);
+  pointer-events: none;
+}
+
+.download-hub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(67, 226, 210, 0.12);
+  flex-wrap: wrap;
+}
+
+.download-hub-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.hub-icon-shield {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: rgba(67, 226, 210, 0.12);
+  border: 1px solid rgba(67, 226, 210, 0.35);
+  color: var(--aqua);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 14px rgba(67, 226, 210, 0.2);
+}
+
+.download-hub-title h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+  letter-spacing: -0.01em;
+}
+
+.download-hub-title p {
+  font-size: 11px;
+  color: #92aca4;
+  line-height: 1.45;
+}
+
+.hub-status-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.report-status-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+  white-space: nowrap;
+}
+
+.download-hub-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.btn-report-dl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  min-height: 44px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-report-html {
+  background: var(--aqua);
+  color: #061e1b !important;
+  font-weight: 600;
+  border: 1px solid var(--aqua);
+  box-shadow: 0 0 16px rgba(67, 226, 210, 0.3);
+}
+
+.btn-report-html:hover {
+  background: #62faec;
+  box-shadow: 0 0 22px rgba(67, 226, 210, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-report-dl svg {
+  flex-shrink: 0;
+}
+
+.hub-btn-tag {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  color: currentColor;
+  margin-left: auto;
+}
+
+.btn-report-preview {
+  color: var(--aqua) !important;
+  border-color: rgba(67, 226, 210, 0.35) !important;
+}
+
+.btn-report-preview:hover {
+  border-color: var(--aqua) !important;
+  background: rgba(67, 226, 210, 0.08) !important;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
